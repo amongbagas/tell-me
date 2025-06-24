@@ -66,8 +66,8 @@ const Testimonials = () => (
         <div className="h-full w-full">
             <h2 className="mb-12 text-4xl md:text-5xl font-bold text-center tracking-tight px-6">Testimonials</h2>
             <div className="relative">
-                <div className="z-10 absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent" />
-                <div className="z-10 absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent" />
+                <div className="absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent" />
+                <div className="absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent" />
                 <Marquee pauseOnHover className="[--duration:50s]">
                     <TestimonialList />
                 </Marquee>

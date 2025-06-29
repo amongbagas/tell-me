@@ -62,26 +62,31 @@ const testimonials = [
 ];
 
 const Testimonials = () => (
-    <div id="testimonials" className="flex justify-center items-center py-25">
-        <div className="h-full w-full">
-            <h2 className="mb-12 text-4xl md:text-5xl font-bold text-center tracking-tight px-6">Testimonials</h2>
+    <section id="testimonials" className="w-full py-12 md:py-24 lg:py-32">
+        <div className="container px-4 md:px-6">
+            <h2 className="mb-8 text-3xl font-bold tracking-tight text-center sm:text-4xl md:mb-12 lg:text-5xl">
+                Testimonials
+            </h2>
             <div className="relative">
-                <div className="absolute left-0 inset-y-0 w-[15%] bg-gradient-to-r from-background to-transparent" />
-                <div className="absolute right-0 inset-y-0 w-[15%] bg-gradient-to-l from-background to-transparent" />
-                <Marquee pauseOnHover className="[--duration:50s]">
+                <div className="absolute left-0 inset-y-0 w-16 md:w-32 bg-gradient-to-r from-background to-transparent z-1" />
+                <div className="absolute right-0 inset-y-0 w-16 md:w-32 bg-gradient-to-l from-background to-transparent z-1" />
+                <Marquee pauseOnHover className="[--duration:50s] py-4">
                     <TestimonialList />
                 </Marquee>
-                <Marquee pauseOnHover reverse className="mt-0 [--duration:50s]">
+                <Marquee pauseOnHover reverse className="[--duration:50s] py-4">
                     <TestimonialList />
                 </Marquee>
             </div>
         </div>
-    </div>
+    </section>
 );
 
 const TestimonialList = () =>
     testimonials.map((testimonial) => (
-        <div key={testimonial.id} className="min-w-96 max-w-sm bg-accent rounded-xl p-6">
+        <div
+            key={testimonial.id}
+            className="w-[300px] sm:w-[350px] md:w-[400px] mx-2 bg-accent rounded-xl p-6 flex-shrink-0"
+        >
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Avatar>
@@ -100,7 +105,7 @@ const TestimonialList = () =>
                     </Link>
                 </Button>
             </div>
-            <p className="mt-5 text-[17px]">{testimonial.testimonial}</p>
+            <p className="mt-5 text-sm sm:text-base md:text-[17px] leading-relaxed">{testimonial.testimonial}</p>
         </div>
     ));
 

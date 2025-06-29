@@ -1,9 +1,13 @@
+"use client";
+
 import { Mic, Ear } from "lucide-react";
 import { Button } from "./ui/button";
 import { AnimatedGridPattern } from "./ui/animated-grid-pattern";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
 
 export default function CTABanner() {
+    const router = useRouter();
     return (
         <div className="px-6">
             <div className="border relative overflow-hidden my-20 w-full bg-background text-foreground max-w-screen-lg mx-auto rounded-2xl py-10 md:py-16 px-6 md:px-14">
@@ -30,10 +34,10 @@ export default function CTABanner() {
                     <p className="mt-2 text-base md:text-lg">Tapi Kamu Tidak Perlu Melakukannya Sendirian.</p>
                 </div>
                 <div className="relative z-0 mt-14 flex flex-col sm:flex-row gap-4">
-                    <Button size="lg">
+                    <Button size="lg" onClick={() => router.push("/login")}>
                         Aku Ingin Bercerita <Mic className="!h-5 !w-5" />
                     </Button>
-                    <Button size="lg" variant="outline">
+                    <Button size="lg" variant="outline" onClick={() => router.push("/login")}>
                         Aku Siap Mendengarkan <Ear className="!h-5 !w-5" />
                     </Button>
                 </div>

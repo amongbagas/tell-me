@@ -1,48 +1,48 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { db } from "@/db/drizzle";
+import { session } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
-export const signIn = async (email: string, password: string) => {
+// Note: For login and signup, it's better to use client-side methods
+// as they handle cookies automatically. Server actions have limitations
+// with cookie setting in Next.js App Router.
+
+const deleteUserSessions = async (userId: string) => {
     try {
-        await auth.api.signInEmail({
-            body: {
-                email,
-                password,
-            },
-        });
-
-        return {
-            success: true,
-            message: "Signed in successfully",
-        };
+        await db.delete(session).where(eq(session.userId, userId));
+        return true;
     } catch (error) {
-        const e = error as Error;
-        return {
-            success: false,
-            message: e.message || "An error occurred during sign-in",
-        };
+        console.error("Error deleting sessions:", error);
+        return false;
     }
 };
 
-export const signUp = async (email: string, password: string, name: string) => {
+export const signOut = async () => {
     try {
-        await auth.api.signUpEmail({
-            body: {
-                email,
-                password,
-                name,
-            },
+        const currentSession = await auth.api.getSession({
+            headers: await headers(),
+        });
+
+        if (currentSession?.user?.id) {
+            await deleteUserSessions(currentSession.user.id);
+        }
+
+        await auth.api.signOut({
+            headers: await headers(),
         });
 
         return {
             success: true,
-            message: "Signed up successfully",
+            message: "Signed out successfully",
         };
     } catch (error) {
         const e = error as Error;
         return {
             success: false,
-            message: e.message || "An error occurred during sign-up",
+            message: e.message || "An error occurred during sign-out",
         };
     }
 };

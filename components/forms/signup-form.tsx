@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { signUp } from "@/server/users";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -44,12 +43,23 @@ export function SignUpForm({ className, ...props }: React.ComponentProps<"div">)
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsLoading(true);
 
-        const { success, message } = await signUp(values.email, values.password, values.username);
-        if (success) {
-            toast.success(message as string);
-            router.push("/dashboard");
-        } else {
-            toast.error(message as string);
+        try {
+            const { error } = await authClient.signUp.email({
+                email: values.email,
+                password: values.password,
+                name: values.username,
+                callbackURL: "/dashboard",
+            });
+
+            if (error) {
+                toast.error(error.message);
+            } else {
+                toast.success("Signed up successfully");
+                router.push("/dashboard");
+            }
+        } catch (err) {
+            const error = err as Error;
+            toast.error(error.message || "An error occurred during sign-up");
         }
 
         setIsLoading(false);

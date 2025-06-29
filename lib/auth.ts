@@ -20,8 +20,7 @@ export const auth = betterAuth({
         enabled: true,
         sendResetPassword: async ({ user, url }) => {
             resend.emails.send({
-                // from: `${process.env.EMAIL_SENDER_NAME} <${process.env.EMAIL_SENDER_ADDRESS}>`, // Uncomment if you want to use environment variables for sender
-                from: "onboarding@resend.dev",
+                from: `${process.env.EMAIL_SENDER_NAME} <${process.env.EMAIL_SENDER_ADDRESS}>`,
                 to: user.email,
                 subject: "Reset your password",
                 react: ForgotPasswordEmail({ username: user.name, resetUrl: url, userEmail: user.email }),

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { signIn } from "@/server/users";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -42,12 +41,31 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsLoading(true);
 
-        const { success, message } = await signIn(values.email, values.password);
-        if (success) {
-            toast.success(message as string);
-            router.push("/dashboard");
-        } else {
-            toast.error(message as string);
+        try {
+            // Check if user is already logged in
+            const currentSession = await authClient.getSession();
+            if (currentSession?.data?.user) {
+                toast.info("You are already logged in");
+                router.push("/dashboard");
+                setIsLoading(false);
+                return;
+            }
+
+            const { error } = await authClient.signIn.email({
+                email: values.email,
+                password: values.password,
+                callbackURL: "/dashboard",
+            });
+
+            if (error) {
+                toast.error(error.message);
+            } else {
+                toast.success("Signed in successfully");
+                router.push("/dashboard");
+            }
+        } catch (err) {
+            const error = err as Error;
+            toast.error(error.message || "An error occurred during sign-in");
         }
 
         setIsLoading(false);

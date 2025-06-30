@@ -8,6 +8,20 @@
       "when": 1751130466340,
       "tag": "0000_remarkable_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1751271151823,
+      "tag": "0001_odd_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1751272025758,
+      "tag": "0002_wooden_exiles",
+      "breakpoints": true
     }
   ]
 }

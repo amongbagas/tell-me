@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
     id: text("id").primaryKey(),
@@ -56,9 +56,21 @@ export const verification = pgTable("verification", {
     updatedAt: timestamp("updated_at").$defaultFn(() => /* @__PURE__ */ new Date()),
 });
 
+export const roomStatusEnum = pgEnum("room_status", ["waiting", "active", "closed"]);
+
+export const room = pgTable("room", {
+    id: text("id").primaryKey(),
+    createdBy: text("created_by").notNull(),
+    status: roomStatusEnum("status").default("waiting").notNull(),
+    createdAt: timestamp("created_at")
+        .$defaultFn(() => /* @__PURE__ */ new Date())
+        .notNull(),
+});
+
 export const schema = {
     user,
     session,
     account,
     verification,
+    room,
 };

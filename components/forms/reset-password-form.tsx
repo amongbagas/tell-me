@@ -25,10 +25,10 @@ const formSchema = z.object({
 export function ResetPasswordForm({ className, ...props }: React.ComponentProps<"div">) {
     const searchParams = useSearchParams();
     const router = useRouter();
-
-    const token = searchParams.get("token") as string;
-
     const [isLoading, setIsLoading] = useState(false);
+
+    // This will be safely accessed because it's wrapped in a Suspense boundary
+    const token = searchParams.get("token") || "";
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
@@ -37,6 +37,18 @@ export function ResetPasswordForm({ className, ...props }: React.ComponentProps<
             confirmPassword: "",
         },
     });
+
+    // Show error if token is missing
+    if (!token) {
+        return (
+            <div className="text-center p-4">
+                <p className="text-destructive">Invalid or missing reset token.</p>
+                <Button asChild variant="link" className="mt-4">
+                    <Link href="/forgot-password">Request a new reset link</Link>
+                </Button>
+            </div>
+        );
+    }
 
     async function onSubmit(values: z.infer<typeof formSchema>) {
         setIsLoading(true);

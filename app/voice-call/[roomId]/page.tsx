@@ -1,6 +1,10 @@
 import VoiceCallRoom from "./voice-call-room";
-import React from "react";
 
-export default function Page({ params }: { params: { roomId: string } }) {
-    return <VoiceCallRoom roomId={params.roomId} />;
+interface PageProps {
+    params: Promise<{ roomId: string }>;
+}
+
+export default async function Page({ params }: PageProps) {
+    const { roomId } = await params;
+    return <VoiceCallRoom roomId={roomId} />;
 }

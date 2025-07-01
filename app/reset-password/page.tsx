@@ -1,9 +1,25 @@
 import Link from "next/link";
-
+import { Suspense } from "react";
 import { ResetPasswordForm } from "@/components/forms/reset-password-form";
 import { GalleryVerticalEnd } from "lucide-react";
 
-export default function LoginPage() {
+function ResetPasswordFormWrapper() {
+    return (
+        <Suspense fallback={
+            <div className="flex justify-center p-8">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            </div>
+        }>
+            <ResetPasswordFormWithToken />
+        </Suspense>
+    );
+}
+
+function ResetPasswordFormWithToken() {
+    return <ResetPasswordForm />;
+}
+
+export default function ResetPasswordPage() {
     return (
         <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
             <div className="flex w-full max-w-sm flex-col gap-6">
@@ -13,7 +29,7 @@ export default function LoginPage() {
                     </div>
                     Tell Me
                 </Link>
-                <ResetPasswordForm />
+                <ResetPasswordFormWrapper />
             </div>
         </div>
     );

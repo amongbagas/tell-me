@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
             .where(and(eq(participant.roomId, roomId), eq(participant.uid, uid)))
             .limit(1);
         if (found.length === 0) {
-            await db.insert(participant).values({ roomId, uid, role, isMuted: true });
+            await db.insert(participant).values({ roomId, uid, role, isMuted: false });
         }
         return NextResponse.json({ success: true });
     } catch (error) {

@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 // import { v4 as uuidv4 } from "uuid";
 import { room } from "@/db/schema";
 import { db } from "@/db/drizzle";
 import { eq } from "drizzle-orm";
 
 // GET /api/rooms?roomId=xxx
-export async function GET(req: any) {
+export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const roomId = searchParams.get("roomId");
     if (!roomId) {
@@ -20,9 +20,21 @@ export async function GET(req: any) {
 }
 
 // POST /api/rooms
-export async function POST(req: any) {
+export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
+        // Check for missing or empty body
+        const contentLength = req.headers.get ? req.headers.get("content-length") : undefined;
+        if (contentLength === "0") {
+            console.warn("Request body is missing (content-length is 0)");
+            return NextResponse.json({ success: false, error: "Request body is missing" }, { status: 400 });
+        }
+        let body;
+        try {
+            body = await req.json();
+        } catch (jsonError) {
+            console.error("Failed to parse JSON body:", jsonError);
+            return NextResponse.json({ success: false, error: "Invalid or empty JSON body" }, { status: 400 });
+        }
         const { roomId, role, createdBy } = body;
         if (!roomId || !role) {
             return NextResponse.json({ success: false, error: "roomId and role are required" }, { status: 400 });
@@ -49,7 +61,7 @@ export async function POST(req: any) {
     }
 }
 
-export async function DELETE(req: any) {
+export async function DELETE(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
         const roomId = searchParams.get("roomId");
@@ -66,7 +78,7 @@ export async function DELETE(req: any) {
     }
 }
 
-export async function PATCH(req: any) {
+export async function PATCH(req: NextRequest) {
     try {
         const body = await req.json();
         const { roomId, status } = body;

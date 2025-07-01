@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Mic, MicOff, PhoneOff, User, Loader2 } from "lucide-react";
 import { useParticipantsPolling } from "@/hooks/use-participants-polling";
+import { SparklesText } from "@/components/magicui/sparkles-text";
+import { StarsBackground } from "@/components/animate-ui/backgrounds/stars";
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 
@@ -245,13 +247,13 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             <div className="flex items-center justify-center min-h-screen bg-background p-4">
                 <Card className="w-[300px]">
                     <CardHeader>
-                        <CardTitle className="text-center">Connecting</CardTitle>
-                        <CardDescription className="text-center">Setting up your voice call</CardDescription>
+                        <CardTitle className="text-center">Menunggu...</CardTitle>
+                        <CardDescription className="text-center">Menyiapkan ruang panggilan...</CardDescription>
                     </CardHeader>
                     <CardContent className="pt-6">
                         <div className="flex flex-col items-center space-y-4">
                             <Loader2 className="h-12 w-12 text-primary animate-spin" />
-                            <p className="text-muted-foreground">Initializing audio...</p>
+                            <p className="text-muted-foreground">Menyiapkan Audio</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -260,18 +262,20 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            <div className="container mx-auto px-4 py-8">
-                <div className="flex flex-col items-center">
-                    <Card className="w-full max-w-6xl">
+        <div className="w-full min-h-screen flex items-center justify-center p-4 overflow-hidden">
+            <div className="w-full max-w-4xl mx-auto relative z-10">
+                <div className="flex flex-col items-center ">
+                    <Card className="w-full max-w-6xl ">
                         <CardHeader className="text-center space-y-2">
                             <div className="flex items-center justify-center gap-2">
-                                <CardTitle className="text-2xl">Room: {params.roomId}</CardTitle>
+                                <CardTitle className="text-2xl">
+                                    <SparklesText>Tell Me</SparklesText>
+                                </CardTitle>
                                 <Badge variant={role === "speaker" ? "default" : "secondary"}>{role}</Badge>
                             </div>
                             <CardDescription>
-                                {participants.length} {participants.length === 1 ? "participant" : "participants"} in
-                                the room
+                                {/* {participants.length} {participants.length === 1 ? "Orang" : "Orang"} di Ruangan */}
+                                Untuk menjagamu, identitasmu akan kami samarkan sepenuhnya.
                             </CardDescription>
                         </CardHeader>
                         <Separator className="my-2" />
@@ -285,11 +289,11 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                                 <Alert className="max-w-xl mx-auto">
                                     <Loader2 className="h-6 w-6 text-primary animate-spin" />
                                     <AlertDescription className="ml-2">
-                                        Waiting for a speaker to join the room...
+                                        Menunggu speaker untuk bergabung...
                                     </AlertDescription>
                                 </Alert>
                             ) : (
-                                <ScrollArea className="h-[500px] pr-4">
+                                <ScrollArea className="h-[300px] pr-4 ">
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                         {participants.map((participant) => (
                                             <Card
@@ -355,7 +359,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                                             </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            <p>End call</p>
+                                            <p>End Call</p>
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -363,6 +367,9 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                         </CardContent>
                     </Card>
                 </div>
+            </div>
+            <div className="absolute inset-0 z-0">
+                <StarsBackground />
             </div>
         </div>
     );

@@ -34,7 +34,7 @@ export function VoiceCallSelector() {
             });
 
             if (!response.ok) {
-                throw new Error("Failed to create room");
+                throw new Error("Gagal membuat ruang");
             }
 
             await response.json();
@@ -42,7 +42,7 @@ export function VoiceCallSelector() {
             router.push(`/voice-call/${roomId}?role=${selectedRole}`);
         } catch (err) {
             console.error("Error starting call:", err);
-            setError("Failed to start call. Please try again.");
+            setError("Gagal memulai call. Silakan coba lagi.");
             setIsLoading(false);
         }
     };
@@ -59,9 +59,9 @@ export function VoiceCallSelector() {
 
             if (!response.ok) {
                 if (response.status === 404) {
-                    setError("No available rooms found. Please try again later.");
+                    setError("Tidak ada ruang yang tersedia. Silakan coba lagi nanti.");
                 } else {
-                    throw new Error("Failed to find a room");
+                    throw new Error("Gagal menemukan ruang");
                 }
                 setIsLoading(false);
                 return;
@@ -71,19 +71,19 @@ export function VoiceCallSelector() {
             router.push(`/voice-call/${data.roomId}?role=${selectedRole}`);
         } catch (err) {
             console.error("Error finding call:", err);
-            setError("An error occurred. Please try again.");
+            setError("Terjadi kesalahan. Silakan coba lagi.");
             setIsLoading(false);
         }
     };
 
     return (
-        <Card className="w-full max-w-md mx-auto mt-8">
+        <Card className="w-full max-w-md mx-auto mt-2">
             <CardHeader>
-                <CardTitle className="text-center">Join or Start a Voice Call</CardTitle>
+                <CardTitle className="text-center">Bergabung atau Mulai Call</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
                 <div className="space-y-2 text-center">
-                    <p className="text-muted-foreground">Select your role to begin.</p>
+                    <p className="text-muted-foreground">Pilih peranmu untuk memulai.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -93,7 +93,7 @@ export function VoiceCallSelector() {
                     >
                         <Mic className="h-8 w-8 mb-2" />
                         <span className="font-medium">Speaker</span>
-                        <span className="text-sm text-muted-foreground">I want to talk</span>
+                        <span className="text-sm text-muted-foreground">Saya ingin bercerita</span>
                     </button>
 
                     <button
@@ -102,7 +102,7 @@ export function VoiceCallSelector() {
                     >
                         <Headphones className="h-8 w-8 mb-2" />
                         <span className="font-medium">Listener</span>
-                        <span className="text-sm text-muted-foreground">I want to listen</span>
+                        <span className="text-sm text-muted-foreground">Saya ingin mendengarkan</span>
                     </button>
                 </div>
 
@@ -111,10 +111,10 @@ export function VoiceCallSelector() {
                         {isLoading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Starting call...
+                                Memulai Panggilan...
                             </>
                         ) : (
-                            "Start a New Call"
+                            "Mulai Panggilan Baru"
                         )}
                     </Button>
                 )}
@@ -124,10 +124,10 @@ export function VoiceCallSelector() {
                         {isLoading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Searching for a room...
+                                Mencari Ruang...
                             </>
                         ) : (
-                            "Find a Room"
+                            "Cari Ruang"
                         )}
                     </Button>
                 )}
@@ -140,7 +140,7 @@ export function VoiceCallSelector() {
                 )}
 
                 <p className="text-xs text-center text-muted-foreground">
-                    Your voice will be anonymous. No personal information is shared.
+                    Suara Anda akan menjadi anonim. Tidak ada informasi pribadi yang dibagikan.
                 </p>
             </CardContent>
         </Card>

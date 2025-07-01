@@ -1,28 +1,35 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db/drizzle";
-import { room } from "@/db/schema";
+import { room, participant } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function GET() {
+export async function GET(req: Request) {
     try {
-        // Find the first available room with 'waiting' status
-        const availableRooms = await db
-            .select()
-            .from(room)
-            .where(eq(room.status, "waiting"))
-            .orderBy(room.createdAt)
-            .limit(1);
-
-        if (availableRooms.length > 0) {
-            const roomToJoin = availableRooms[0];
-
-            // Update the room status to 'active'
-            await db.update(room).set({ status: "active" }).where(eq(room.id, roomToJoin.id));
-
-            return NextResponse.json({ success: true, roomId: roomToJoin.id });
+        const { searchParams } = new URL(req.url);
+        const roomId = searchParams.get("roomId");
+        if (roomId) {
+            // Mode polling peserta
+            const foundRooms = await db.select().from(room).where(eq(room.id, roomId)).limit(1);
+            if (foundRooms.length === 0) {
+                return NextResponse.json({ success: false, message: "Room not found." }, { status: 404 });
+            }
+            const participants = await db
+                .select({ uid: participant.uid, isMuted: participant.isMuted, role: participant.role })
+                .from(participant)
+                .where(eq(participant.roomId, roomId));
+            return NextResponse.json({ success: true, roomId, participants });
         } else {
-            // No waiting rooms available
-            return NextResponse.json({ success: false, message: "No available rooms found." }, { status: 404 });
+            // Mode find room untuk speaker
+            const foundRooms = await db
+                .select()
+                .from(room)
+                .where(eq(room.status, "waiting"))
+                .orderBy(room.createdAt)
+                .limit(1);
+            if (foundRooms.length === 0) {
+                return NextResponse.json({ success: false, message: "No available rooms found." }, { status: 404 });
+            }
+            return NextResponse.json({ success: true, roomId: foundRooms[0].id });
         }
     } catch (error) {
         console.error("Error finding room:", error);

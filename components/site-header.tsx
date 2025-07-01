@@ -32,11 +32,8 @@ export function SiteHeader() {
         avatar: user?.image || `https://ui-avatars.com/api/?name=${user?.name}&background=random`,
     };
     return (
-        <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
-            <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6 justify-between">
-                <div className="flex items-center gap-2">
-                    <h1 className="text-base font-medium">Tell Me</h1>
-                </div>
+        <header className="flex h-(--header-height) shrink-0 items-center gap-2  ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+            <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6 justify-end">
                 <div className="flex items-center gap-2">
                     <NavUser user={userData} />
                 </div>

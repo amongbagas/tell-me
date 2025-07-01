@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import AgoraRTC, { IAgoraRTCClient, IAgoraRTCRemoteUser, IMicrophoneAudioTrack } from "agora-rtc-sdk-ng";
 import { Button } from "@/components/ui/button";
@@ -39,32 +39,59 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isMuted, setIsMuted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-
-    const handleUserPublished = useCallback(async (user: IAgoraRTCRemoteUser, mediaType: "audio" | "video") => {
-        await clientRef.current?.subscribe(user, mediaType);
-        if (mediaType === "audio") {
-            user.audioTrack?.play();
-            setParticipants((prev) => [
-                ...prev.filter((p) => p.uid !== user.uid),
-                { uid: user.uid as number, isMuted: !user.audioTrack?.isPlaying, role: "speaker" },
-            ]);
-        }
-    }, []);
-
-    const handleUserUnpublished = useCallback((user: IAgoraRTCRemoteUser) => {
-        setParticipants((prev) => prev.filter((p) => p.uid !== user.uid));
-    }, []);
+    const [localUid, setLocalUid] = useState<number | null>(null);
+    const [userRoles, setUserRoles] = useState<Record<number, Role>>({});
 
     useEffect(() => {
         let isMounted = true;
         const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
         clientRef.current = agoraClient;
 
+        const handleUserPublished = async (user: IAgoraRTCRemoteUser, mediaType: "audio" | "video") => {
+            await agoraClient.subscribe(user, mediaType);
+            if (mediaType === "audio") {
+                user.audioTrack?.play();
+                const role = userRoles[user.uid as number] || "listener";
+                setParticipants((prev) => {
+                    return prev.some((p) => p.uid === user.uid)
+                        ? prev.map((p) => (p.uid === user.uid ? { ...p, isMuted: !user.audioTrack?.isPlaying } : p))
+                        : [...prev, { uid: user.uid as number, isMuted: !user.audioTrack?.isPlaying, role }];
+                });
+            }
+        };
+
+        const handleUserUnpublished = (user: IAgoraRTCRemoteUser) => {
+            setParticipants((prev) =>
+                prev.map((p) => (p.uid === user.uid && p.role === "speaker" ? { ...p, isMuted: true } : p))
+            );
+        };
+
+        const handleUserLeft = (user: IAgoraRTCRemoteUser) => {
+            setParticipants((prev) => prev.filter((p) => p.uid !== user.uid));
+            setUserRoles((prev) => {
+                const newRoles = { ...prev };
+                delete newRoles[user.uid as number];
+                return newRoles;
+            });
+        };
+
         const join = async () => {
             if (!role || !params.roomId) return;
-
             try {
-                const uid = Math.floor(Math.random() * 10000);
+                let uid = Number(sessionStorage.getItem(`vc-uid-${params.roomId}`));
+                if (!uid) {
+                    uid = Math.floor(Math.random() * 10000);
+                    sessionStorage.setItem(`vc-uid-${params.roomId}`, String(uid));
+                }
+                setLocalUid(uid);
+                setUserRoles((prev) => ({ ...prev, [uid]: role }));
+
+                // Tambahkan participant ke backend
+                await fetch("/api/rooms/participant", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ roomId: params.roomId, uid, role }),
+                });
 
                 const response = await fetch("/api/agora-token", {
                     method: "POST",
@@ -72,7 +99,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                     body: JSON.stringify({
                         channelName: params.roomId,
                         uid,
-                        role: role === "speaker" ? "publisher" : "subscriber",
+                        role: "publisher",
                     }),
                 });
 
@@ -84,17 +111,17 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
 
                 agoraClient.on("user-published", handleUserPublished);
                 agoraClient.on("user-unpublished", handleUserUnpublished);
+                agoraClient.on("user-left", handleUserLeft);
 
                 await agoraClient.join(AGORA_APP_ID, params.roomId, token, uid);
 
                 if (isMounted) {
-                    if (role === "speaker") {
-                        const track = await AgoraRTC.createMicrophoneAudioTrack();
-                        localAudioTrackRef.current = track;
-                        await agoraClient.publish([track]);
-                        setParticipants((prev) => [...prev, { uid, isMuted: false, role: "speaker" }]);
+                    const track = await AgoraRTC.createMicrophoneAudioTrack();
+                    localAudioTrackRef.current = track;
+                    await track.setEnabled(true);
+                    await agoraClient.publish([track]);
 
-                        // Update room status to active when speaker joins
+                    if (role === "speaker") {
                         try {
                             await fetch("/api/rooms", {
                                 method: "PATCH",
@@ -107,8 +134,6 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                         } catch (error) {
                             console.error("Failed to update room status:", error);
                         }
-                    } else {
-                        setParticipants((prev) => [...prev, { uid, isMuted: true, role: "listener" }]);
                     }
                     setIsLoading(false);
                 }
@@ -126,30 +151,80 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             localAudioTrackRef.current?.close();
 
             if (role === "listener") {
-                // Fire-and-forget request to delete the room
                 navigator.sendBeacon(`/api/rooms?roomId=${params.roomId}`);
+            }
+
+            // Hapus participant dari backend
+            if (localUid) {
+                fetch(`/api/rooms/participant?roomId=${params.roomId}&uid=${localUid}`, {
+                    method: "DELETE",
+                    keepalive: true,
+                });
             }
 
             agoraClient.leave();
             setParticipants([]);
         };
-    }, [role, params.roomId, router, handleUserPublished, handleUserUnpublished]);
+    }, [role, params.roomId, router]);
 
-    const toggleMute = () => {
-        if (role === "speaker" && localAudioTrackRef.current) {
-            const newMutedState = !isMuted;
-            localAudioTrackRef.current.setEnabled(!newMutedState);
-            setIsMuted(newMutedState);
-            setParticipants((prev) =>
-                prev.map((p) => (p.uid === clientRef.current?.uid ? { ...p, isMuted: newMutedState } : p))
-            );
+    // Polling ke backend untuk semua role
+    useEffect(() => {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/rooms/find?roomId=${params.roomId}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (Array.isArray(data.participants)) {
+                    setParticipants(data.participants);
+                }
+            } catch {}
+        }, 2000);
+        return () => clearInterval(interval);
+    }, [params.roomId]);
+
+    const toggleMute = async () => {
+        if (!localAudioTrackRef.current) {
+            try {
+                const track = await AgoraRTC.createMicrophoneAudioTrack();
+                localAudioTrackRef.current = track;
+                await track.setEnabled(true);
+                await clientRef.current?.publish([track]);
+                setIsMuted(false);
+                // Update ke backend
+                if (localUid) {
+                    await fetch("/api/rooms/participant", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ roomId: params.roomId, uid: localUid, isMuted: false }),
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to create or publish audio track:", e);
+            }
+            return;
+        }
+        const newMutedState = !isMuted;
+        if (!newMutedState) {
+            await localAudioTrackRef.current.setEnabled(true);
+            await clientRef.current?.publish([localAudioTrackRef.current]);
+        } else {
+            await clientRef.current?.unpublish([localAudioTrackRef.current]);
+            await localAudioTrackRef.current.setEnabled(false);
+        }
+        setIsMuted(newMutedState);
+        // Update ke backend
+        if (localUid) {
+            await fetch("/api/rooms/participant", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ roomId: params.roomId, uid: localUid, isMuted: newMutedState }),
+            });
         }
     };
 
     const handleEndCall = async () => {
         if (role === "speaker") {
             try {
-                // Update room status to waiting when speaker leaves
                 await fetch("/api/rooms", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
@@ -163,7 +238,6 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             }
         } else if (role === "listener") {
             try {
-                // Delete room if listener is leaving
                 fetch(`/api/rooms?roomId=${params.roomId}`, {
                     method: "DELETE",
                     keepalive: true,
@@ -172,12 +246,9 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                 console.error("Failed to send delete room request:", error);
             }
         }
-        // The useEffect cleanup will handle leaving the Agora channel upon unmount
         router.push("/dashboard");
     };
 
-    // A listener is waiting if no speaker is in the participants list.
-    // A speaker never waits after connecting.
     const isWaiting = role === "listener" && !participants.some((p) => p.role === "speaker");
 
     if (isLoading) {
@@ -242,11 +313,15 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                                                     </div>
                                                     <div className="text-center">
                                                         <h3 className="font-medium mb-1">
-                                                            {participant.uid === clientRef.current?.uid
+                                                            {participant.uid === localUid
                                                                 ? "You"
                                                                 : `User ${participant.uid}`}
                                                         </h3>
-                                                        <Badge variant="outline" className="text-xs">
+                                                        <Badge
+                                                            variant={
+                                                                participant.role === "speaker" ? "default" : "secondary"
+                                                            }
+                                                        >
                                                             {participant.role}
                                                         </Badge>
                                                     </div>
@@ -259,27 +334,21 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
 
                             <div className="mt-12 flex items-center justify-center gap-4">
                                 <TooltipProvider>
-                                    {role === "speaker" && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Button
-                                                    variant={isMuted ? "destructive" : "outline"}
-                                                    size="lg"
-                                                    onClick={toggleMute}
-                                                    className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
-                                                >
-                                                    {isMuted ? (
-                                                        <MicOff className="h-6 w-6" />
-                                                    ) : (
-                                                        <Mic className="h-6 w-6" />
-                                                    )}
-                                                </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                                <p>{isMuted ? "Unmute microphone" : "Mute microphone"}</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant={isMuted ? "destructive" : "outline"}
+                                                size="lg"
+                                                onClick={toggleMute}
+                                                className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
+                                            >
+                                                {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p>{isMuted ? "Unmute microphone" : "Mute microphone"}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button

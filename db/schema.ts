@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, pgEnum, integer, serial, unique } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
     id: text("id").primaryKey(),
@@ -67,10 +67,28 @@ export const room = pgTable("room", {
         .notNull(),
 });
 
+export const participantRoleEnum = pgEnum("participant_role", ["speaker", "listener"]);
+
+export const participant = pgTable(
+    "participant",
+    {
+        id: serial("id").primaryKey(),
+        roomId: text("room_id").notNull(),
+        uid: integer("uid").notNull(),
+        role: participantRoleEnum("role").notNull(),
+        isMuted: boolean("is_muted").notNull().default(true),
+        createdAt: timestamp("created_at").notNull().defaultNow(),
+    },
+    (table) => ({
+        uniqueRoomUid: unique("unique_room_uid").on(table.roomId, table.uid),
+    })
+);
+
 export const schema = {
     user,
     session,
     account,
     verification,
     room,
+    participant,
 };

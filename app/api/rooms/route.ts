@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 // import { v4 as uuidv4 } from "uuid";
-import { room } from "@/db/schema";
+import { participant, room } from "@/db/schema";
 import { db } from "@/db/drizzle";
 import { eq } from "drizzle-orm";
 
@@ -71,6 +71,7 @@ export async function DELETE(req: NextRequest) {
         }
 
         await db.delete(room).where(eq(room.id, roomId));
+        await db.delete(participant).where(eq(participant.roomId, roomId));
         return NextResponse.json({ success: true, message: "Room deleted successfully" });
     } catch (error) {
         console.error("Error deleting room:", error);

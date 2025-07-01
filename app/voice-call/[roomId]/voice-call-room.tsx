@@ -24,14 +24,12 @@ interface Participant {
 }
 
 interface VoiceCallRoomProps {
-    params: {
-        roomId: string;
-    };
+    roomId: string;
 }
 
 type Role = "listener" | "speaker";
 
-export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
+export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
     const role = searchParams.get("role") as Role;
@@ -46,7 +44,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
     const [userRoles, setUserRoles] = useState<Record<number, Role>>({});
     const [errorPolling, setErrorPolling] = useState<string | null>(null);
 
-    useParticipantsPolling(params.roomId, setParticipants, setErrorPolling);
+    useParticipantsPolling(roomId, setParticipants, setErrorPolling);
 
     useEffect(() => {
         let isMounted = true;
@@ -82,12 +80,12 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
         };
 
         const join = async () => {
-            if (!role || !params.roomId) return;
+            if (!role || !roomId) return;
             try {
-                let uid = Number(sessionStorage.getItem(`vc-uid-${params.roomId}`));
+                let uid = Number(sessionStorage.getItem(`vc-uid-${roomId}`));
                 if (!uid) {
                     uid = Math.floor(Math.random() * 10000);
-                    sessionStorage.setItem(`vc-uid-${params.roomId}`, String(uid));
+                    sessionStorage.setItem(`vc-uid-${roomId}`, String(uid));
                 }
                 setLocalUid(uid);
                 setUserRoles((prev) => ({ ...prev, [uid]: role }));
@@ -96,14 +94,14 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                 await fetch("/api/rooms/participant", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ roomId: params.roomId, uid, role }),
+                    body: JSON.stringify({ roomId: roomId, uid, role }),
                 });
 
                 const response = await fetch("/api/agora-token", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        channelName: params.roomId,
+                        channelName: roomId,
                         uid,
                         role: "publisher",
                     }),
@@ -119,7 +117,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                 agoraClient.on("user-unpublished", handleUserUnpublished);
                 agoraClient.on("user-left", handleUserLeft);
 
-                await agoraClient.join(AGORA_APP_ID, params.roomId, token, uid);
+                await agoraClient.join(AGORA_APP_ID, roomId, token, uid);
 
                 if (isMounted) {
                     const track = await AgoraRTC.createMicrophoneAudioTrack();
@@ -133,7 +131,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                                 method: "PATCH",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify({
-                                    roomId: params.roomId,
+                                    roomId: roomId,
                                     status: "active",
                                 }),
                             });
@@ -157,12 +155,12 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             localAudioTrackRef.current?.close();
 
             if (role === "listener") {
-                navigator.sendBeacon(`/api/rooms?roomId=${params.roomId}`);
+                navigator.sendBeacon(`/api/rooms?roomId=${roomId}`);
             }
 
             // Hapus participant dari backend
             if (localUid) {
-                fetch(`/api/rooms/participant?roomId=${params.roomId}&uid=${localUid}`, {
+                fetch(`/api/rooms/participant?roomId=${roomId}&uid=${localUid}`, {
                     method: "DELETE",
                     keepalive: true,
                 });
@@ -171,7 +169,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             agoraClient.leave();
             setParticipants([]);
         };
-    }, [role, params.roomId, router]);
+    }, [role, roomId, router]);
 
     const toggleMute = async () => {
         if (!localAudioTrackRef.current) {
@@ -186,7 +184,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                     await fetch("/api/rooms/participant", {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ roomId: params.roomId, uid: localUid, isMuted: false }),
+                        body: JSON.stringify({ roomId: roomId, uid: localUid, isMuted: false }),
                     });
                 }
             } catch (e) {
@@ -208,7 +206,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             await fetch("/api/rooms/participant", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ roomId: params.roomId, uid: localUid, isMuted: newMutedState }),
+                body: JSON.stringify({ roomId: roomId, uid: localUid, isMuted: newMutedState }),
             });
         }
     };
@@ -220,7 +218,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        roomId: params.roomId,
+                        roomId: roomId,
                         status: "waiting",
                     }),
                 });
@@ -229,7 +227,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
             }
         } else if (role === "listener") {
             try {
-                fetch(`/api/rooms?roomId=${params.roomId}`, {
+                fetch(`/api/rooms?roomId=${roomId}`, {
                     method: "DELETE",
                     keepalive: true,
                 });

@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Mic, MicOff, PhoneOff, User, Loader2 } from "lucide-react";
 import { useParticipantsPolling } from "@/hooks/use-participants-polling";
 import { SparklesText } from "@/components/magicui/sparkles-text";
-import { StarsBackground } from "@/components/animate-ui/backgrounds/stars";
+import { Particles } from "@/components/ui/particles";
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 
@@ -369,7 +369,7 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                 </div>
             </div>
             <div className="absolute inset-0 z-0">
-                <StarsBackground />
+                <Particles />
             </div>
         </div>
     );

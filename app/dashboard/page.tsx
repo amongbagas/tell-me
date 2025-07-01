@@ -1,7 +1,7 @@
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { VoiceCallSelector } from "@/components/voice-call-selector";
-import { StarsBackground } from "@/components/animate-ui/backgrounds/stars";
+import { Particles } from "@/components/ui/particles";
 import { SparklesText } from "@/components/magicui/sparkles-text";
 
 export default function Page() {
@@ -23,7 +23,7 @@ export default function Page() {
                 </div>
             </SidebarInset>
             <div className="absolute inset-0 z-0">
-                <StarsBackground />
+                <Particles />
             </div>
         </SidebarProvider>
     );

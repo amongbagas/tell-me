@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Mic, MicOff, PhoneOff, User, Loader2 } from "lucide-react";
+import { useParticipantsPolling } from "@/hooks/use-participants-polling";
 
 const AGORA_APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 
@@ -41,6 +42,9 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [localUid, setLocalUid] = useState<number | null>(null);
     const [userRoles, setUserRoles] = useState<Record<number, Role>>({});
+    const [errorPolling, setErrorPolling] = useState<string | null>(null);
+
+    useParticipantsPolling(params.roomId, setParticipants, setErrorPolling);
 
     useEffect(() => {
         let isMounted = true;
@@ -167,21 +171,6 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
         };
     }, [role, params.roomId, router]);
 
-    // Polling ke backend untuk semua role
-    useEffect(() => {
-        const interval = setInterval(async () => {
-            try {
-                const res = await fetch(`/api/rooms/find?roomId=${params.roomId}`);
-                if (!res.ok) return;
-                const data = await res.json();
-                if (Array.isArray(data.participants)) {
-                    setParticipants(data.participants);
-                }
-            } catch {}
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [params.roomId]);
-
     const toggleMute = async () => {
         if (!localAudioTrackRef.current) {
             try {
@@ -287,6 +276,11 @@ export default function VoiceCallRoom({ params }: VoiceCallRoomProps) {
                         </CardHeader>
                         <Separator className="my-2" />
                         <CardContent className="pt-6">
+                            {errorPolling && (
+                                <Alert variant="destructive" className="mb-4">
+                                    <AlertDescription>{errorPolling}</AlertDescription>
+                                </Alert>
+                            )}
                             {isWaiting ? (
                                 <Alert className="max-w-xl mx-auto">
                                     <Loader2 className="h-6 w-6 text-primary animate-spin" />

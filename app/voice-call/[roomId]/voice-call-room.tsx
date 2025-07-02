@@ -212,6 +212,14 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     };
 
     const handleEndCall = async () => {
+        try {
+            await fetch(`/api/rooms/participant?roomId=${roomId}&uid=${localUid}`, {
+                method: "DELETE",
+                keepalive: true,
+            });
+        } catch (error) {
+            console.error("Failed to delete participant:", error);
+        }
         if (role === "speaker") {
             try {
                 await fetch("/api/rooms", {
@@ -227,7 +235,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
             }
         } else if (role === "listener") {
             try {
-                fetch(`/api/rooms?roomId=${roomId}`, {
+                await fetch(`/api/rooms?roomId=${roomId}`, {
                     method: "DELETE",
                     keepalive: true,
                 });

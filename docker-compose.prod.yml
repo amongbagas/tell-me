@@ -1,0 +1,45 @@
+services:
+    # Next.js Application (Production Mode)
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: tell-me-app-prod
+        environment:
+            - NODE_ENV=production
+            - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+            - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+            - DATABASE_URL=${DATABASE_URL}
+            - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+            - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+            - RESEND_API_KEY=${RESEND_API_KEY}
+            - EMAIL_SENDER_NAME=${EMAIL_SENDER_NAME}
+            - EMAIL_SENDER_ADDRESS=${EMAIL_SENDER_ADDRESS}
+            - NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL}
+            - WEBSOCKET_PORT=${WEBSOCKET_PORT}
+        ports:
+            - "3000:3000"
+        networks:
+            - tell-me-network
+        restart: unless-stopped
+
+    # WebSocket Server
+    websocket:
+        build:
+            context: .
+            dockerfile: Dockerfile.websocket.prod
+        container_name: tell-me-websocket-prod
+        environment:
+            - NODE_ENV=production
+            - WEBSOCKET_PORT=${WEBSOCKET_PORT}
+        ports:
+            - "8080:8080"
+        depends_on:
+            - app
+        networks:
+            - tell-me-network
+        restart: unless-stopped
+
+networks:
+    tell-me-network:
+        driver: bridge

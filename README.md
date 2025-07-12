@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=nextdotjs" alt="Next.js">
   <img src="https://img.shields.io/badge/Drizzle-ORM-brightgreen?style=for-the-badge&logo=drizzle" alt="Drizzle ORM">
-  <img src="https://img.shields.io/badge/Agora-RTC-blue?style=for-the-badge&logo=agora" alt="Agora">
+  <img src="https://img.shields.io/badge/WEB-RTC-blue?style=for-the-badge&logo=webrtc" alt="Web RTC">
   <img src="https://img.shields.io/badge/Auth-Better--Auth-orange?style=for-the-badge" alt="Better-Auth">
   <img src="https://img.shields.io/badge/Styling-TailwindCSS-blueviolet?style=for-the-badge&logo=tailwindcss" alt="Tailwind CSS">
   <img src="https://img.shields.io/badge/shadcn-ui-blue?style=for-the-badge&logo=shadcn" alt="shadcn-ui">
@@ -24,7 +24,7 @@ Terkadang, hal yang paling kita butuhkan adalah didengarkan. Bukan dinasihati, b
 
 ## 🚀 Fitur Utama
 
-- **📞 Panggilan Suara Anonim:** Terhubung dengan pengguna lain melalui panggilan suara real-time yang aman menggunakan **Agora RTC SDK**. Identitas Anda sepenuhnya terlindungi.
+- **📞 Panggilan Suara Anonim:** Terhubung dengan pengguna lain melalui panggilan suara real-time yang aman menggunakan **WebRTC**. Identitas Anda sepenuhnya terlindungi.
 - **🎭 Sistem Peran (Speaker & Listener):** Pengguna dapat memilih peran sebagai 'Speaker' (ingin bercerita) atau 'Listener' (siap mendengarkan), menciptakan sesi percakapan yang terstruktur.
 - **🤝 Pencarian Ruangan Cerdas:** 'Listener' dapat membuat ruang tunggu, dan 'Speaker' dapat dengan mudah menemukan ruang yang tersedia untuk segera memulai percakapan.
 - **🔐 Otentikasi Aman & Fleksibel:** Sistem otentikasi lengkap menggunakan **Better-Auth**, mendukung pendaftaran/login via Google dan email/password, termasuk fungsionalitas lupa/reset password.
@@ -39,7 +39,7 @@ Terkadang, hal yang paling kita butuhkan adalah didengarkan. Bukan dinasihati, b
 - **Animasi:** Framer Motion, Magic UI (Word Rotate, Sparkles Text)
 - **Database & ORM:** PostgreSQL (Neon) & Drizzle ORM
 - **Otentikasi:** Better-Auth
-- **Panggilan Suara Real-time:** Agora RTC SDK
+- **Panggilan Suara Real-time:** WEB RTC
 - **Pengiriman Email:** Resend (untuk reset password)
 - **Deployment:** Vercel
 
@@ -74,9 +74,9 @@ Ikuti langkah-langkah berikut untuk menjalankan proyek ini di lingkungan lokal A
     # URL Database (contoh: Neon)
     DATABASE_URL="postgres://..."
 
-    # Kredensial Agora
-    NEXT_PUBLIC_AGORA_APP_ID="your_agora_app_id"
-    AGORA_APP_CERTIFICATE="your_agora_app_certificate"
+    # WebSocket Configuration
+    NEXT_PUBLIC_WEBSOCKET_URL="ws://localhost:PORT"
+    WEBSOCKET_PORT="PORT"
 
     # Kredensial Better-Auth & Google
     GOOGLE_CLIENT_ID="your_google_client_id"
@@ -89,7 +89,7 @@ Ikuti langkah-langkah berikut untuk menjalankan proyek ini di lingkungan lokal A
     EMAIL_SENDER_ADDRESS="noreply@yourdomain.com"
     ```
 
-    - Anda bisa mendapatkan kredensial ini dari masing-masing layanan: [Neon](https://neon.tech), [Agora](https://www.agora.io/), [Google Cloud Console](https://console.cloud.google.com/), dan [Resend](https://resend.com/).
+    - Anda bisa mendapatkan kredensial ini dari masing-masing layanan: [Neon](https://neon.tech), [Google Cloud Console](https://console.cloud.google.com/), dan [Resend](https://resend.com/).
 
 4.  **Jalankan Migrasi Database:**
     Drizzle Kit akan menggunakan skema di `db/schema.ts` untuk membuat dan menerapkan migrasi ke database Anda.
@@ -102,11 +102,43 @@ Ikuti langkah-langkah berikut untuk menjalankan proyek ini di lingkungan lokal A
 
 5.  **Jalankan server pengembangan:**
 
+    **Untuk fitur lengkap termasuk panggilan suara:**
+
+    ```bash
+    npm run dev-full
+    ```
+
+    **Atau hanya untuk pengembangan frontend:**
+
     ```bash
     npm run dev
     ```
 
-6.  Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
+    **Untuk memulai hanya WebSocket server:**
+
+    ```bash
+    npm run start-websocket
+    ```
+
+    **Untuk test koneksi WebSocket:**
+
+    ```bash
+    npm run test-websocket
+    ```
+
+    > **Catatan:** Gunakan `npm run dev-full` untuk menjalankan both Next.js dev server dan WebSocket server secara bersamaan. Ini diperlukan untuk fitur panggilan suara yang berfungsi penuh.
+
+### 🔧 Troubleshooting WebSocket
+
+Jika Anda mengalami masalah dengan koneksi WebSocket (error: "WebSocket error: {}"), baca panduan lengkap di [WEBSOCKET_TROUBLESHOOTING.md](./WEBSOCKET_TROUBLESHOOTING.md).
+
+**Solusi cepat:**
+
+1. Pastikan WebSocket server berjalan: `npm run start-websocket`
+2. Test koneksi: `npm run test-websocket`
+3. Gunakan `npm run dev-full` untuk pengembangan
+
+4. Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
 
 ## 🤝 Kontribusi
 

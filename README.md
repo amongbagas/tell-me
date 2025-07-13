@@ -128,18 +128,6 @@ Ikuti langkah-langkah berikut untuk menjalankan proyek ini di lingkungan lokal A
 
     > **Catatan:** Gunakan `npm run dev-full` untuk menjalankan both Next.js dev server dan WebSocket server secara bersamaan. Ini diperlukan untuk fitur panggilan suara yang berfungsi penuh.
 
-### 🔧 Troubleshooting WebSocket
-
-Jika Anda mengalami masalah dengan koneksi WebSocket (error: "WebSocket error: {}"), baca panduan lengkap di [WEBSOCKET_TROUBLESHOOTING.md](./WEBSOCKET_TROUBLESHOOTING.md).
-
-**Solusi cepat:**
-
-1. Pastikan WebSocket server berjalan: `npm run start-websocket`
-2. Test koneksi: `npm run test-websocket`
-3. Gunakan `npm run dev-full` untuk pengembangan
-
-4. Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
-
 ## 🤝 Kontribusi
 
 Kontribusi sangat kami hargai! Jika Anda ingin berkontribusi, silakan fork repositori ini dan buat _pull request_. Untuk perubahan besar, mohon buka _issue_ terlebih dahulu untuk mendiskusikan apa yang ingin Anda ubah.

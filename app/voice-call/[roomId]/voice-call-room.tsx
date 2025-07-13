@@ -1,29 +1,29 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Mic, MicOff, PhoneOff, User, Loader2 } from "lucide-react";
-import { SparklesText } from "@/components/magicui/sparkles-text";
-import { Particles } from "@/components/ui/particles";
-import { useWebSocketVoiceCall, Participant } from "@/hooks/use-websocket-voice-call";
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Mic, MicOff, PhoneOff, User, Loader2 } from 'lucide-react';
+import { SparklesText } from '@/components/magicui/sparkles-text';
+import { Particles } from '@/components/ui/particles';
+import { useWebSocketVoiceCall, Participant } from '@/hooks/use-websocket-voice-call';
 
 interface VoiceCallRoomProps {
     roomId: string;
 }
 
-type Role = "listener" | "speaker";
+type Role = 'listener' | 'speaker';
 
-export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
+export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const role = searchParams.get("role") as Role;
+    const role = searchParams.get('role') as Role;
 
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -35,114 +35,29 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
     const handleEnableAudio = async () => {
         try {
             // Try to resume audio context
-            if (typeof window !== "undefined" && "webkitAudioContext" in window) {
+            if (typeof window !== 'undefined' && 'webkitAudioContext' in window) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                if (audioContext.state === "suspended") {
+                if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
                 audioContext.close();
             }
 
             // Force play all remote audio elements
-            const remoteAudioElements = document.querySelectorAll("audio[data-uid]");
+            const remoteAudioElements = document.querySelectorAll('audio[data-uid]');
             remoteAudioElements.forEach(async (audio) => {
                 try {
                     await (audio as HTMLAudioElement).play();
-                    console.log(`🎵 Forced play audio for UID: ${audio.getAttribute("data-uid")}`);
+                    console.log(`🎵 Forced play audio for UID: ${audio.getAttribute('data-uid')}`);
                 } catch (error) {
-                    console.error("Failed to force play audio:", error);
+                    console.error('Failed to force play audio:', error);
                 }
             });
 
             setNeedsUserInteraction(false);
         } catch (error) {
-            console.error("Failed to enable audio:", error);
-        }
-    };
-
-    // Debug function to log audio state - improved for troubleshooting
-    const logAudioState = () => {
-        console.log("🔍 Audio Debug Info:");
-        console.log("- Role:", role);
-        console.log("- Is muted:", isMuted);
-        console.log("- Has media stream:", hasMediaStream);
-        console.log("- Is connected:", isConnected);
-        console.log("- Participants:", participants);
-        console.log("- Local UID:", localUid);
-
-        // Check local stream
-        if (hasMediaStream) {
-            console.log("🎤 Local Audio Stream Details:");
-            // Access to the hook's local stream would require passing it through the hook
-            // For now, we'll check for getUserMedia
-            navigator.mediaDevices
-                .getUserMedia({ audio: true, video: false })
-                .then((stream) => {
-                    const audioTracks = stream.getAudioTracks();
-                    console.log("🎤 Local audio tracks:", audioTracks.length);
-                    audioTracks.forEach((track, index) => {
-                        console.log(`🎤 Track ${index}:`, {
-                            kind: track.kind,
-                            enabled: track.enabled,
-                            readyState: track.readyState,
-                            muted: track.muted,
-                            id: track.id,
-                            label: track.label,
-                        });
-                    });
-                    stream.getTracks().forEach((track) => track.stop()); // Clean up test stream
-                })
-                .catch(console.error);
-        }
-
-        // Check for remote audio elements
-        const remoteAudioElements = document.querySelectorAll("audio[data-uid]");
-        console.log("🎵 Remote audio elements:", remoteAudioElements.length);
-        remoteAudioElements.forEach((audio) => {
-            const uid = audio.getAttribute("data-uid");
-            const audioEl = audio as HTMLAudioElement;
-            console.log(`🎵 Audio[${uid}]:`, {
-                paused: audioEl.paused,
-                volume: audioEl.volume,
-                muted: audioEl.muted,
-                readyState: audioEl.readyState,
-                srcObject: audioEl.srcObject,
-                currentTime: audioEl.currentTime,
-                duration: audioEl.duration,
-                networkState: audioEl.networkState,
-                error: audioEl.error,
-            });
-
-            // Try to analyze the audio stream
-            if (audioEl.srcObject) {
-                const stream = audioEl.srcObject as MediaStream;
-                const audioTracks = stream.getAudioTracks();
-                console.log(`🎵 Audio[${uid}] stream tracks:`, audioTracks.length);
-                audioTracks.forEach((track, index) => {
-                    console.log(`🎵 Audio[${uid}] Track ${index}:`, {
-                        kind: track.kind,
-                        enabled: track.enabled,
-                        readyState: track.readyState,
-                        muted: track.muted,
-                        id: track.id,
-                        label: track.label,
-                    });
-                });
-            }
-        });
-
-        // Check audio context
-        if (typeof window !== "undefined" && "webkitAudioContext" in window) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                console.log("🔊 Audio context state:", audioContext.state);
-                console.log("🔊 Audio context sample rate:", audioContext.sampleRate);
-                audioContext.close();
-            } catch (error) {
-                console.error("🔊 Audio context error:", error);
-            }
+            console.error('Failed to enable audio:', error);
         }
     };
 
@@ -163,9 +78,7 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
         toggleMute,
         initiateCall,
         disconnect,
-        connect, // Add connect function for retry
-        hasMediaStream,
-        verifyAndFixAudioTracks, // Add this function for debugging
+        connect,
     } = useWebSocketVoiceCall({
         roomId,
         uid,
@@ -193,34 +106,34 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
             // Check if user interaction is needed for audio
             const checkAudioContext = async () => {
                 try {
-                    if (typeof window !== "undefined" && "webkitAudioContext" in window) {
+                    if (typeof window !== 'undefined' && 'webkitAudioContext' in window) {
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                        if (audioContext.state === "suspended") {
+                        if (audioContext.state === 'suspended') {
                             setNeedsUserInteraction(true);
                         }
                         audioContext.close();
                     }
                 } catch (error) {
-                    console.error("Failed to check audio context:", error);
+                    console.error('Failed to check audio context:', error);
                 }
             };
 
             checkAudioContext();
 
             // Add participant to backend
-            fetch("/api/rooms/participant", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            fetch('/api/rooms/participant', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId, uid, role }),
             }).catch(console.error);
 
             // Update room status if speaker
-            if (role === "speaker") {
-                fetch("/api/rooms", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ roomId, status: "active" }),
+            if (role === 'speaker') {
+                fetch('/api/rooms', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roomId, status: 'active' }),
                 }).catch(console.error);
             }
         }
@@ -229,8 +142,8 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
     // Initiate calls to other participants when they join
     useEffect(() => {
         if (wsParticipants.length > 0) {
-            console.log("👥 Participants updated:", wsParticipants);
-            console.log("👤 Current user UID:", uid, "Role:", role);
+            console.log('👥 Participants updated:', wsParticipants);
+            console.log('👤 Current user UID:', uid, 'Role:', role);
 
             wsParticipants.forEach((participant) => {
                 if (participant.uid !== uid) {
@@ -249,29 +162,29 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
         try {
             // Remove participant from backend
             await fetch(`/api/rooms/participant?roomId=${roomId}&uid=${uid}`, {
-                method: "DELETE",
+                method: 'DELETE',
                 keepalive: true,
             });
 
             // Update room status
-            if (role === "speaker") {
-                await fetch("/api/rooms", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ roomId, status: "waiting" }),
+            if (role === 'speaker') {
+                await fetch('/api/rooms', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roomId, status: 'waiting' }),
                 });
-            } else if (role === "listener") {
+            } else if (role === 'listener') {
                 await fetch(`/api/rooms?roomId=${roomId}`, {
-                    method: "DELETE",
+                    method: 'DELETE',
                     keepalive: true,
                 });
             }
         } catch (error) {
-            console.error("Failed to clean up:", error);
+            console.error('Failed to clean up:', error);
         }
 
         disconnect();
-        router.push("/dashboard");
+        router.push('/dashboard');
     };
 
     // Handle cleanup on unmount
@@ -279,14 +192,14 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
         return () => {
             if (localUid) {
                 fetch(`/api/rooms/participant?roomId=${roomId}&uid=${localUid}`, {
-                    method: "DELETE",
+                    method: 'DELETE',
                     keepalive: true,
                 }).catch(console.error);
             }
         };
     }, [roomId, localUid]);
 
-    const isWaiting = role === "listener" && !participants.some((p) => p.role === "speaker");
+    const isWaiting = role === 'listener' && !participants.some((p) => p.role === 'speaker');
 
     if (isLoading) {
         return (
@@ -317,14 +230,11 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
                                 <CardTitle className="text-2xl">
                                     <SparklesText>Tell Me</SparklesText>
                                 </CardTitle>
-                                <Badge variant={role === "speaker" ? "default" : "secondary"}>{role}</Badge>
+                                <Badge variant={role === 'speaker' ? 'default' : 'secondary'}>{role}</Badge>
                             </div>
                             <CardDescription>
                                 Untuk menjagamu, identitasmu akan kami samarkan sepenuhnya.
                                 <br />
-                                <span className="text-green-600 font-medium">
-                                    Semua peserta dapat berbicara dan mendengar secara bersamaan.
-                                </span>
                             </CardDescription>
                             {!isConnected && <Badge variant="destructive">Terputus</Badge>}
                         </CardHeader>
@@ -385,12 +295,12 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
                                                     <div className="text-center">
                                                         <h3 className="font-medium mb-1">
                                                             {participant.uid === localUid
-                                                                ? "You"
+                                                                ? 'You'
                                                                 : `User ${participant.uid}`}
                                                         </h3>
                                                         <Badge
                                                             variant={
-                                                                participant.role === "speaker" ? "default" : "secondary"
+                                                                participant.role === 'speaker' ? 'default' : 'secondary'
                                                             }
                                                         >
                                                             {participant.role}
@@ -408,7 +318,7 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
-                                                variant={isMuted ? "destructive" : "outline"}
+                                                variant={isMuted ? 'destructive' : 'outline'}
                                                 size="lg"
                                                 onClick={toggleMute}
                                                 className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
@@ -418,97 +328,7 @@ export default function VoiceCallRoomWebSocket({ roomId }: VoiceCallRoomProps) {
                                             </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            <p>{isMuted ? "Unmute microphone" : "Mute microphone"}</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                size="lg"
-                                                onClick={logAudioState}
-                                                className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
-                                                disabled={!isConnected}
-                                            >
-                                                🔍
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Debug Audio State</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                size="lg"
-                                                onClick={() => {
-                                                    // Force enable all audio tracks
-                                                    navigator.mediaDevices
-                                                        .getUserMedia({ audio: true, video: false })
-                                                        .then((stream) => {
-                                                            console.log("🎤 Force enabling local audio tracks");
-                                                            stream.getAudioTracks().forEach((track) => {
-                                                                track.enabled = true;
-                                                                console.log(`🎤 Track enabled: ${track.enabled}`);
-                                                            });
-
-                                                            // Test if we can hear audio input
-                                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                            const audioContext = new (window.AudioContext ||
-                                                                (window as any).webkitAudioContext)();
-                                                            const source = audioContext.createMediaStreamSource(stream);
-                                                            const analyser = audioContext.createAnalyser();
-                                                            source.connect(analyser);
-
-                                                            const dataArray = new Uint8Array(
-                                                                analyser.frequencyBinCount
-                                                            );
-                                                            const checkAudio = () => {
-                                                                analyser.getByteFrequencyData(dataArray);
-                                                                const average =
-                                                                    dataArray.reduce((a, b) => a + b) /
-                                                                    dataArray.length;
-                                                                console.log(`🎤 Audio level: ${average}`);
-                                                                if (average > 0) {
-                                                                    console.log("🎤 Microphone is picking up audio!");
-                                                                }
-                                                            };
-
-                                                            // Check audio levels for 5 seconds
-                                                            const interval = setInterval(checkAudio, 500);
-                                                            setTimeout(() => {
-                                                                clearInterval(interval);
-                                                                audioContext.close();
-                                                                stream.getTracks().forEach((track) => track.stop());
-                                                            }, 5000);
-                                                        })
-                                                        .catch(console.error);
-                                                }}
-                                                className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
-                                                disabled={!isConnected}
-                                            >
-                                                �
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Test Microphone</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                size="lg"
-                                                onClick={verifyAndFixAudioTracks}
-                                                className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
-                                                disabled={!isConnected}
-                                            >
-                                                🔧
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>Fix Audio Tracks</p>
+                                            <p>{isMuted ? 'Unmute microphone' : 'Mute microphone'}</p>
                                         </TooltipContent>
                                     </Tooltip>
                                     <Tooltip>

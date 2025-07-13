@@ -1,4 +1,4 @@
-import VoiceCallRoomWebSocket from "./voice-call-room-websocket";
+import VoiceCallRoom from './voice-call-room';
 
 interface PageProps {
     params: Promise<{ roomId: string }>;
@@ -6,5 +6,5 @@ interface PageProps {
 
 export default async function Page({ params }: PageProps) {
     const { roomId } = await params;
-    return <VoiceCallRoomWebSocket roomId={roomId} />;
+    return <VoiceCallRoom roomId={roomId} />;
 }

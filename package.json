@@ -8,13 +8,7 @@
         "start": "next start",
         "lint": "next lint",
         "start-websocket": "npx tsx lib/websocket-server.ts",
-        "dev-full": "concurrently \"npm run dev\" \"npm run start-websocket\"",
-        "docker:build": "docker-compose build",
-        "docker:up": "docker-compose up -d",
-        "docker:down": "docker-compose down",
-        "docker:restart": "docker-compose restart",
-        "docker:logs": "docker-compose logs -f",
-        "docker:migrate": "docker-compose exec app npx drizzle-kit push"
+        "dev-full": "concurrently \"npm run dev\" \"npm run start-websocket\""
     },
     "dependencies": {
         "@dnd-kit/core": "^6.3.1",

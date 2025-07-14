@@ -64,11 +64,10 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
         setConnectionStatus(status);
     }, []);
 
-    const { isMuted, toggleMute, initiateCall, disconnect, connect } = useWebSocketVoiceCall({
+    const { isMuted, toggleMute, initiateCall, disconnect, connect, peerConnectionsRef } = useWebSocketVoiceCall({
         roomId,
         uid,
         role,
-        participants,
         onParticipantsChange: handleParticipantsChange,
         onError: handleError,
         onStatusChange: handleStatusChange,
@@ -174,14 +173,30 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                 // Ensure we don't try to call ourselves
                 // The `initiateCall` function in the hook handles glare prevention (smaller UID initiates)
                 if (participant.uid !== uid) {
-                    console.log(
-                        `📞 Checking participant ${participant.uid} (role: ${participant.role}). Attempting to initiate call for simultaneous communication.`
-                    );
-                    initiateCall(participant.uid);
+                    // Periksa apakah sudah ada PeerConnection untuk peserta ini
+                    // dan apakah statusnya tidak 'disconnected', 'failed', atau 'closed'
+                    const existingPc = peerConnectionsRef.current.get(participant.uid);
+
+                    // Jika belum ada PeerConnection, atau PeerConnection yang ada tidak aktif/sudah mati
+                    if (
+                        !existingPc ||
+                        existingPc.connectionState === 'disconnected' ||
+                        existingPc.connectionState === 'failed' ||
+                        existingPc.signalingState === 'closed'
+                    ) {
+                        console.log(
+                            `📞 Memulai panggilan ke peserta ${participant.uid} (peran: ${participant.role}) untuk komunikasi simultan.`
+                        );
+                        initiateCall(participant.uid); // Panggil fungsi initiateCall dari hook
+                    } else {
+                        console.log(
+                            `📞 Peer connection ke ${participant.uid} sudah ada dan aktif (${existingPc.connectionState}). Melewati initiateCall.`
+                        );
+                    }
                 }
             });
         }
-    }, [participants, uid, role, initiateCall, connectionStatus]);
+    }, [participants, uid, role, initiateCall, connectionStatus, peerConnectionsRef]);
 
     // --- Handle Retry Connection ---
     const handleRetry = useCallback(() => {

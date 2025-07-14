@@ -27,7 +27,6 @@ export interface UseWebSocketVoiceCallProps {
     roomId: string;
     uid: number;
     role: 'speaker' | 'listener';
-    participants: Participant[];
     onParticipantsChange: (participants: Participant[]) => void;
     onError: (error: string) => void;
     onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
@@ -37,7 +36,6 @@ export function useWebSocketVoiceCall({
     roomId,
     uid,
     role,
-    participants,
     onParticipantsChange,
     onError,
     onStatusChange,
@@ -57,20 +55,19 @@ export function useWebSocketVoiceCall({
     const retryDelayMs = 3000;
     const heartbeatIntervalRef = useRef<number | null>(null);
     const connectionAttemptRef = useRef<boolean>(false); // Guard against multiple connection attempts
+    const [internalParticipants, setInternalParticipants] = useState<Participant[]>([]);
 
     // Use refs to store callbacks to prevent dependency chain issues
     const onParticipantsChangeRef = useRef(onParticipantsChange);
     const onErrorRef = useRef(onError);
     const onStatusChangeRef = useRef(onStatusChange);
-    const participantsRef = useRef(participants);
 
     // Update refs when props change
     useEffect(() => {
         onParticipantsChangeRef.current = onParticipantsChange;
         onErrorRef.current = onError;
         onStatusChangeRef.current = onStatusChange;
-        participantsRef.current = participants;
-    }, [onParticipantsChange, onError, onStatusChange, participants]);
+    }, [onParticipantsChange, onError, onStatusChange]);
 
     // --- Utility Functions ---
 
@@ -330,6 +327,29 @@ export function useWebSocketVoiceCall({
                 peerConnection = createPeerConnection(targetUid);
             }
 
+            // Ensure we have a local stream before trying to add tracks
+            const currentLocalStream = localStream || (await getMediaStream());
+            if (!currentLocalStream) {
+                onErrorRef.current('Could not get microphone access to initiate call.');
+                return;
+            }
+
+            // Add local stream tracks to the new peer connection if not already added
+            const existingSenders = peerConnection.getSenders();
+            currentLocalStream.getTracks().forEach((track) => {
+                if (!existingSenders.some((sender) => sender.track === track)) {
+                    track.enabled = !isMuted; // Apply current mute state
+                    peerConnection!.addTrack(track, currentLocalStream);
+                    console.log(`🔗 Added local track (${track.kind}) to PC for ${targetUid}`);
+                } else {
+                    // If track already exists, ensure its enabled state is correct
+                    const sender = existingSenders.find((s) => s.track === track);
+                    if (sender && sender.track) {
+                        sender.track.enabled = !isMuted;
+                    }
+                }
+            });
+
             // Add local stream tracks if not already added
             if (localStream) {
                 const existingSenders = peerConnection.getSenders();
@@ -419,6 +439,7 @@ export function useWebSocketVoiceCall({
                                     role: p.role as 'speaker' | 'listener',
                                     isMuted: p.isMuted,
                                 }));
+                                setInternalParticipants(updatedParticipants);
                                 onParticipantsChangeRef.current(updatedParticipants);
 
                                 // Initiate calls to new participants (if we are speaker and they are not us)
@@ -469,14 +490,29 @@ export function useWebSocketVoiceCall({
                                     peerConnection = createPeerConnection(fromUid);
                                 }
 
-                                // Add local stream tracks to the new peer connection if not already added
-                                if (localStream && peerConnection.getSenders().length === 0) {
-                                    localStream.getTracks().forEach((track) => {
-                                        track.enabled = !isMuted; // Set initial mute state
-                                        peerConnection?.addTrack(track, localStream);
-                                        console.log(`📞 Added local track (${track.kind}) to PC for ${fromUid}`);
-                                    });
+                                // Ensure we have a local stream before trying to add tracks
+                                const currentLocalStream = localStream || (await getMediaStream());
+                                if (!currentLocalStream) {
+                                    onErrorRef.current('Could not get microphone access to receive offer.');
+                                    return;
                                 }
+
+                                // Add local stream tracks to the new peer connection if not already added
+                                const existingSenders = peerConnection.getSenders();
+                                currentLocalStream.getTracks().forEach((track) => {
+                                    if (!existingSenders.some((sender) => sender.track === track)) {
+                                        track.enabled = !isMuted; // Set initial mute state
+                                        peerConnection?.addTrack(track, currentLocalStream);
+                                        console.log(
+                                            `📞 Added local track (${track.kind}) to PC for ${fromUid} when receiving offer`
+                                        );
+                                    } else {
+                                        const sender = existingSenders.find((s) => s.track === track);
+                                        if (sender && sender.track) {
+                                            sender.track.enabled = !isMuted;
+                                        }
+                                    }
+                                });
 
                                 await peerConnection.setRemoteDescription(
                                     new RTCSessionDescription({ type: 'offer', sdp: message.data.sdp })
@@ -560,7 +596,8 @@ export function useWebSocketVoiceCall({
                                     console.log(`🗑️ Removed audio element for ${leftUid}.`);
                                 }
                                 // Update participants list
-                                const updatedParticipants = participantsRef.current.filter((p) => p.uid !== leftUid);
+                                const updatedParticipants = internalParticipants.filter((p) => p.uid !== leftUid);
+                                setInternalParticipants(updatedParticipants);
                                 onParticipantsChangeRef.current(updatedParticipants);
                             }
                             break;
@@ -572,9 +609,10 @@ export function useWebSocketVoiceCall({
                                 const isMutedByPeer = message.type === 'mute';
                                 console.log(`🗣️ User ${targetUid} is now ${isMutedByPeer ? 'muted' : 'unmuted'}.`);
                                 // Update participants via callback, letting component manage state
-                                const updatedParticipants = participantsRef.current.map((p) =>
+                                const updatedParticipants = internalParticipants.map((p) =>
                                     p.uid === targetUid ? { ...p, isMuted: isMutedByPeer } : p
                                 );
+                                setInternalParticipants(updatedParticipants);
                                 onParticipantsChangeRef.current(updatedParticipants);
                             }
                             break;
@@ -648,6 +686,8 @@ export function useWebSocketVoiceCall({
             updateStatus,
             role,
             initiateCall,
+            getMediaStream,
+            internalParticipants,
         ]
     );
 
@@ -770,6 +810,7 @@ export function useWebSocketVoiceCall({
 
         setIsConnected(false);
         setIsConnecting(false);
+        setInternalParticipants([]);
         onParticipantsChangeRef.current([]);
     }, [localStream, updateStatus]);
 
@@ -796,10 +837,24 @@ export function useWebSocketVoiceCall({
 
             console.log(`🔊 Local audio track set to enabled: ${audioTrack.enabled}`);
 
+            // Update participant's mute state in all existing peer connections
+            peerConnectionsRef.current.forEach((pc) => {
+                const senders = pc.getSenders();
+                // Temukan sender yang terkait dengan track audio lokal kita
+                const audioSender = senders.find(
+                    (sender) => sender.track?.kind === 'audio' && sender.track === audioTrack
+                );
+                if (audioSender && audioSender.track) {
+                    audioSender.track.enabled = !newMutedState;
+                    console.log(`🔊 Updated audio sender track for peer, enabled: ${audioSender.track.enabled}`);
+                }
+            });
+
             // Update local participants state immediately for responsiveness
-            const updatedParticipants = participantsRef.current.map((p) =>
+            const updatedParticipants = internalParticipants.map((p) =>
                 p.uid === uid ? { ...p, isMuted: newMutedState } : p
             );
+            setInternalParticipants(updatedParticipants);
             onParticipantsChangeRef.current(updatedParticipants);
 
             // Inform peers via WebSocket
@@ -826,7 +881,7 @@ export function useWebSocketVoiceCall({
             console.warn('🔊 No audio track found in local stream to toggle mute.');
             onErrorRef.current('No audio track found for muting/unmuting.');
         }
-    }, [isMuted, localStream, roomId, uid]);
+    }, [isMuted, localStream, roomId, uid, internalParticipants]);
 
     // --- Effects ---
 
@@ -851,26 +906,28 @@ export function useWebSocketVoiceCall({
     }, []); // Empty dependency array - only run once on mount
 
     // Effect for participants change to initiate calls if role is speaker
-    useEffect(() => {
-        if (isConnected && role === 'speaker') {
-            participantsRef.current.forEach((p) => {
-                if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
-                    console.log(
-                        `🔗 Proactively initiating call to new participant ${p.uid} due to participant update.`
-                    );
-                    initiateCall(p.uid);
-                }
-            });
-        }
-    }, [participants, isConnected, role, uid, initiateCall]);
+    // useEffect(() => {
+    //     if (isConnected && role === 'speaker') {
+    //         participantsRef.current.forEach((p) => {
+    //             if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
+    //                 console.log(
+    //                     `🔗 Proactively initiating call to new participant ${p.uid} due to participant update.`
+    //                 );
+    //                 initiateCall(p.uid);
+    //             }
+    //         });
+    //     }
+    // }, [participants, isConnected, role, uid, initiateCall]);
 
     return {
         isConnected,
+        participants: internalParticipants,
         isMuted,
         toggleMute,
         initiateCall,
         disconnect,
         connect, // Expose connect for manual retry
         hasMediaStream: !!localStream,
+        peerConnectionsRef,
     };
 }

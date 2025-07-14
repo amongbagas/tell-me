@@ -27,701 +27,87 @@ export interface UseWebSocketVoiceCallProps {
     roomId: string;
     uid: number;
     role: 'speaker' | 'listener';
+    participants: Participant[];
     onParticipantsChange: (participants: Participant[]) => void;
     onError: (error: string) => void;
+    onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
 }
 
 export function useWebSocketVoiceCall({
     roomId,
     uid,
     role,
+    participants,
     onParticipantsChange,
     onError,
+    onStatusChange,
 }: UseWebSocketVoiceCallProps) {
     const wsRef = useRef<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
-    const [participants, setParticipants] = useState<Participant[]>([]);
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [isMuted, setIsMuted] = useState(false); // Start unmuted for simultaneous communication
+    const [isMuted, setIsMuted] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const peerConnectionsRef = useRef<Map<number, RTCPeerConnection>>(new Map());
     const remoteAudioElementsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
     const audioContextRef = useRef<AudioContext | null>(null);
-    const pendingAnswersRef = useRef<Set<number>>(new Set()); // Track pending answers by user ID
-    const pendingIceCandidatesRef = useRef<Map<number, RTCIceCandidate[]>>(new Map()); // Queue ICE candidates by user ID
+    const pendingAnswersRef = useRef<Set<number>>(new Set());
+    const pendingIceCandidatesRef = useRef<Map<number, RTCIceCandidate[]>>(new Map());
+    const retryAttemptsRef = useRef(0);
+    const maxRetries = 5;
+    const retryDelayMs = 3000;
+    const heartbeatIntervalRef = useRef<number | null>(null);
+    const connectionAttemptRef = useRef<boolean>(false); // Guard against multiple connection attempts
 
-    // Initialize audio context
+    // Use refs to store callbacks to prevent dependency chain issues
+    const onParticipantsChangeRef = useRef(onParticipantsChange);
+    const onErrorRef = useRef(onError);
+    const onStatusChangeRef = useRef(onStatusChange);
+    const participantsRef = useRef(participants);
+
+    // Update refs when props change
+    useEffect(() => {
+        onParticipantsChangeRef.current = onParticipantsChange;
+        onErrorRef.current = onError;
+        onStatusChangeRef.current = onStatusChange;
+        participantsRef.current = participants;
+    }, [onParticipantsChange, onError, onStatusChange, participants]);
+
+    // --- Utility Functions ---
+
+    const updateStatus = useCallback((status: 'connecting' | 'connected' | 'disconnected' | 'error') => {
+        onStatusChangeRef.current?.(status);
+    }, []);
+
     const initializeAudioContext = useCallback(() => {
         if (!audioContextRef.current) {
             try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-                console.log('Audio context initialized');
+                audioContextRef.current = new (window.AudioContext ||
+                    (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
+                console.log('🎵 Audio context initialized');
             } catch (error) {
                 console.error('Failed to initialize audio context:', error);
             }
         }
     }, []);
 
-    // Resume audio context if suspended
     const resumeAudioContext = useCallback(async () => {
         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
             try {
                 await audioContextRef.current.resume();
-                console.log('Audio context resumed');
+                console.log('🎵 Audio context resumed');
             } catch (error) {
                 console.error('Failed to resume audio context:', error);
             }
         }
     }, []);
 
-    const createPeerConnection = useCallback(
-        (targetUid: number) => {
-            // Check if a peer connection already exists and clean it up if needed
-            const existingConnection = peerConnectionsRef.current.get(targetUid);
-            if (existingConnection) {
-                console.log(`Closing existing peer connection for ${targetUid}`);
-                existingConnection.close();
-                peerConnectionsRef.current.delete(targetUid);
-                // Clear any pending answers for this user
-                pendingAnswersRef.current.delete(targetUid);
-                // Clear any pending ICE candidates for this user
-                pendingIceCandidatesRef.current.delete(targetUid);
-            }
-
-            const configuration: RTCConfiguration = {
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
-            };
-
-            const peerConnection = new RTCPeerConnection(configuration);
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate && wsRef.current) {
-                    wsRef.current.send(
-                        JSON.stringify({
-                            type: 'ice-candidate',
-                            roomId,
-                            uid,
-                            data: {
-                                targetUid,
-                                candidate: event.candidate,
-                            },
-                        })
-                    );
-                }
-            };
-
-            peerConnection.ontrack = (event) => {
-                console.log('🎵 Received remote track:', event.track);
-                console.log('🎵 Track kind:', event.track.kind);
-                console.log('🎵 Track enabled:', event.track.enabled);
-                console.log('🎵 Track muted:', event.track.muted);
-                console.log('🎵 Track readyState:', event.track.readyState);
-                console.log('🎵 Streams:', event.streams);
-
-                // Clean up existing audio element for this user
-                const existingAudio = remoteAudioElementsRef.current.get(targetUid);
-                if (existingAudio) {
-                    existingAudio.pause();
-                    existingAudio.srcObject = null;
-                    if (existingAudio.parentNode) {
-                        existingAudio.parentNode.removeChild(existingAudio);
-                    }
-                    remoteAudioElementsRef.current.delete(targetUid);
-                }
-
-                // Create audio element and immediately attach to DOM for better browser compatibility
-                const remoteAudio = document.createElement('audio');
-                remoteAudio.srcObject = event.streams[0];
-                remoteAudio.autoplay = true;
-                remoteAudio.volume = 1.0;
-                remoteAudio.muted = false;
-                remoteAudio.setAttribute('playsinline', 'true');
-                remoteAudio.style.display = 'none';
-                remoteAudio.setAttribute('data-uid', targetUid.toString());
-
-                // Add to DOM immediately
-                document.body.appendChild(remoteAudio);
-
-                // Store reference for cleanup
-                remoteAudioElementsRef.current.set(targetUid, remoteAudio);
-
-                // Add detailed event listeners for debugging
-                remoteAudio.addEventListener('loadstart', () => console.log(`🎵 [${targetUid}] Audio loadstart`));
-                remoteAudio.addEventListener('loadedmetadata', () => {
-                    console.log(`🎵 [${targetUid}] Audio loadedmetadata - duration:`, remoteAudio.duration);
-                });
-                remoteAudio.addEventListener('canplay', () => console.log(`🎵 [${targetUid}] Audio canplay`));
-                remoteAudio.addEventListener('play', () => console.log(`🎵 [${targetUid}] Audio play`));
-                remoteAudio.addEventListener('pause', () => console.log(`🎵 [${targetUid}] Audio pause`));
-                remoteAudio.addEventListener('error', (e) => console.error(`🎵 [${targetUid}] Audio error:`, e));
-                remoteAudio.addEventListener('ended', () => console.log(`🎵 [${targetUid}] Audio ended`));
-
-                // Auto-play setup for immediate audio playback
-                const setupAutoplay = async () => {
-                    try {
-                        // Initialize and resume audio context immediately
-                        initializeAudioContext();
-                        await resumeAudioContext();
-
-                        console.log(`🎵 [${targetUid}] Setting up automatic audio playback...`);
-
-                        // Force load the audio
-                        remoteAudio.load();
-
-                        // Wait for the audio to be ready
-                        await new Promise((resolve, reject) => {
-                            const timeoutId = setTimeout(() => {
-                                reject(new Error('Audio load timeout'));
-                            }, 5000);
-
-                            if (remoteAudio.readyState >= 2) {
-                                clearTimeout(timeoutId);
-                                resolve(true);
-                            } else {
-                                const handleCanPlay = () => {
-                                    clearTimeout(timeoutId);
-                                    remoteAudio.removeEventListener('canplay', handleCanPlay);
-                                    resolve(true);
-                                };
-                                remoteAudio.addEventListener('canplay', handleCanPlay);
-                            }
-                        });
-
-                        // Try to play automatically
-                        await remoteAudio.play();
-                        console.log(`🎵 [${targetUid}] Remote audio started playing automatically`);
-                    } catch (error) {
-                        console.log(`🎵 [${targetUid}] Autoplay blocked, setting up user interaction handler:`, error);
-
-                        // Set up user interaction handler for autoplay restriction
-                        const handleUserInteraction = async (event: Event) => {
-                            try {
-                                console.log(
-                                    `🎵 [${targetUid}] User interaction detected (${event.type}), enabling audio...`
-                                );
-                                initializeAudioContext();
-                                await resumeAudioContext();
-
-                                remoteAudio.load();
-                                await remoteAudio.play();
-
-                                console.log(`🎵 [${targetUid}] Remote audio started playing after user interaction`);
-
-                                // Remove all event listeners after successful play
-                                ['click', 'keydown', 'touchstart', 'mousedown'].forEach((eventType) => {
-                                    document.removeEventListener(eventType, handleUserInteraction);
-                                });
-                            } catch (retryError) {
-                                console.error(
-                                    `🎵 [${targetUid}] Failed to play audio after user interaction:`,
-                                    retryError
-                                );
-                            }
-                        };
-
-                        // Add multiple event listeners for user interaction
-                        ['click', 'keydown', 'touchstart', 'mousedown'].forEach((eventType) => {
-                            document.addEventListener(eventType, handleUserInteraction, { once: true });
-                        });
-                    }
-                };
-
-                // Set up Web Audio API routing for better audio control
-                if (audioContextRef.current) {
-                    try {
-                        const source = audioContextRef.current.createMediaStreamSource(event.streams[0]);
-                        const gainNode = audioContextRef.current.createGain();
-                        gainNode.gain.value = 1.0;
-                        source.connect(gainNode);
-                        gainNode.connect(audioContextRef.current.destination);
-                        console.log(`🎵 [${targetUid}] Web Audio API routing established for simultaneous audio`);
-                    } catch (webAudioError) {
-                        console.error(`🎵 [${targetUid}] Web Audio API setup failed:`, webAudioError);
-                    }
-                }
-
-                setupAutoplay();
-            };
-
-            peerConnectionsRef.current.set(targetUid, peerConnection);
-            return peerConnection;
-        },
-        [roomId, uid, initializeAudioContext, resumeAudioContext]
-    );
-
-    // Add connection health check
-    const checkServerHealth = useCallback(async () => {
-        try {
-            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080'}/voice-call?roomId=health-check&uid=0&role=listener`;
-            const testWs = new WebSocket(wsUrl);
-
-            return new Promise<boolean>((resolve) => {
-                const timeout = setTimeout(() => {
-                    testWs.close();
-                    console.warn('Health check timeout');
-                    resolve(false);
-                }, 3000);
-
-                testWs.onopen = () => {
-                    clearTimeout(timeout);
-                    testWs.close();
-                    console.log('Health check passed');
-                    resolve(true);
-                };
-
-                testWs.onerror = (error) => {
-                    clearTimeout(timeout);
-                    testWs.close();
-                    console.error('Health check failed:', error);
-                    resolve(false);
-                };
-
-                testWs.onclose = (event) => {
-                    clearTimeout(timeout);
-                    if (event.code !== 1000) {
-                        console.warn('Health check connection closed unexpectedly:', event.code, event.reason);
-                    }
-                };
-            });
-        } catch (error) {
-            console.error('Health check failed:', error);
-            return false;
-        }
-    }, []);
-
-    const connect = useCallback(async () => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            console.log('WebSocket already connected');
-            return;
-        }
-
-        if (isConnecting) {
-            console.log('Already connecting...');
-            return;
-        }
-
-        setIsConnecting(true);
-
-        // Clean up any existing connection
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-
-        // Check if server is available first
-        console.log('Checking WebSocket server health...');
-        const isServerHealthy = await checkServerHealth();
-
-        if (!isServerHealthy) {
-            setIsConnecting(false);
-            onError('WebSocket server is not responding. Please ensure the server is running on port 8080.');
-            return;
-        }
-
-        try {
-            console.log('Attempting to connect WebSocket...');
-            console.log('Room ID:', roomId, 'UID:', uid, 'Role:', role); // Get user media for ALL users (both speakers and listeners)
-            // This enables simultaneous communication
-            let stream: MediaStream | null = null;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1,
-                    },
-                    video: false,
-                });
-                console.log('Got media stream:', stream);
-                console.log('Audio tracks:', stream.getAudioTracks());
-
-                // Ensure audio tracks are enabled from the start
-                stream.getAudioTracks().forEach((track) => {
-                    track.enabled = true; // Force enable audio track
-                    console.log(`🎤 Audio track enabled: ${track.enabled}, ready state: ${track.readyState}`);
-                });
-
-                setLocalStream(stream);
-
-                // Initialize audio context immediately for better performance
-                initializeAudioContext();
-            } catch (mediaError) {
-                console.error('Failed to get media stream:', mediaError);
-                setIsConnecting(false);
-                onError(
-                    'Microphone access is required for voice communication. Please allow microphone permissions and try again.'
-                );
-                return;
-            }
-
-            // Connect to WebSocket
-            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080'}/voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
-            console.log('Connecting to WebSocket URL:', wsUrl);
-            const ws = new WebSocket(wsUrl);
-
-            // Store reference immediately to prevent multiple connections
-            wsRef.current = ws;
-
-            ws.onopen = () => {
-                if (wsRef.current === ws) {
-                    setIsConnected(true);
-                    setIsConnecting(false);
-                    console.log('Connected to WebSocket');
-                }
-            };
-
-            ws.onmessage = async (event) => {
-                if (wsRef.current !== ws) return;
-
-                try {
-                    const message: WebSocketMessage = JSON.parse(event.data);
-                    console.log('Received message:', message);
-
-                    switch (message.type) {
-                        case 'participant-update':
-                            if (message.data?.participants) {
-                                const updatedParticipants = message.data.participants.map((p) => ({
-                                    uid: p.uid,
-                                    role: p.role as 'speaker' | 'listener',
-                                    isMuted: p.isMuted,
-                                }));
-                                setParticipants(updatedParticipants);
-                                onParticipantsChange(updatedParticipants);
-
-                                // Auto-initiate calls to all other participants for simultaneous communication
-                                updatedParticipants.forEach((participant) => {
-                                    if (participant.uid !== uid && !peerConnectionsRef.current.has(participant.uid)) {
-                                        console.log(
-                                            `🔄 Auto-initiating call to participant ${participant.uid} for simultaneous communication`
-                                        );
-                                        // Use setTimeout to avoid blocking the message handler
-                                        setTimeout(() => {
-                                            // Contoh: hanya peer dengan UID lebih kecil yang memulai call
-                                            if (uid < participant.uid) {
-                                                initiateCall(participant.uid);
-                                            }
-                                        }, 100);
-                                    }
-                                });
-                            }
-                            break;
-
-                        case 'offer':
-                            if (message.data?.fromUid && message.data?.sdp) {
-                                const fromUid = message.data.fromUid;
-                                console.log(`📞 Received offer from ${fromUid}`);
-
-                                let peerConnection = peerConnectionsRef.current.get(fromUid);
-
-                                // If peer connection exists but is not in stable state, we need to handle this carefully
-                                if (peerConnection && peerConnection.signalingState !== 'stable') {
-                                    console.warn(
-                                        `Received offer from ${fromUid} but peer connection is in state: ${peerConnection.signalingState}. Closing existing connection.`
-                                    );
-                                    peerConnection.close();
-                                    peerConnectionsRef.current.delete(fromUid);
-                                    // Clear any pending answers for this user
-                                    pendingAnswersRef.current.delete(fromUid);
-                                    // Clear any pending ICE candidates for this user
-                                    pendingIceCandidatesRef.current.delete(fromUid);
-                                    peerConnection = undefined;
-                                }
-
-                                // Create new peer connection if needed
-                                if (!peerConnection) {
-                                    console.log(`📞 Creating new peer connection for ${fromUid}`);
-                                    peerConnection = createPeerConnection(fromUid);
-                                }
-
-                                // Add local stream tracks if available
-                                if (localStream) {
-                                    console.log(`📞 Adding local stream tracks for ${fromUid}`);
-                                    const audioTracks = localStream.getAudioTracks();
-                                    console.log(`📞 Found ${audioTracks.length} audio tracks for ${fromUid}`);
-
-                                    localStream.getTracks().forEach((track) => {
-                                        // Ensure track is enabled if we're not muted
-                                        if (track.kind === 'audio') {
-                                            track.enabled = !isMuted;
-                                            console.log(
-                                                `📞 Audio track enabled: ${track.enabled} (muted: ${isMuted}) for ${fromUid}`
-                                            );
-
-                                            // Additional debugging
-                                            console.log(`📞 Audio track details for ${fromUid}:`, {
-                                                kind: track.kind,
-                                                enabled: track.enabled,
-                                                readyState: track.readyState,
-                                                muted: track.muted,
-                                                id: track.id,
-                                                label: track.label,
-                                            });
-                                        }
-
-                                        try {
-                                            const sender = peerConnection.addTrack(track, localStream);
-                                            console.log(`📞 Successfully added track for ${fromUid}, sender:`, sender);
-                                        } catch (error) {
-                                            console.error(`📞 Failed to add track for ${fromUid}:`, error);
-                                        }
-                                    });
-
-                                    // Verify tracks were added
-                                    const senders = peerConnection.getSenders();
-                                    console.log(`📞 Peer connection for ${fromUid} has ${senders.length} senders`);
-                                    senders.forEach((sender, index) => {
-                                        if (sender.track) {
-                                            console.log(
-                                                `📞 Sender ${index} for ${fromUid}: ${sender.track.kind} track, enabled: ${sender.track.enabled}`
-                                            );
-                                        }
-                                    });
-                                } else {
-                                    console.log(`📞 No local stream available for ${fromUid}`);
-                                }
-
-                                try {
-                                    console.log(
-                                        `📞 Setting remote description for ${fromUid}, current state: ${peerConnection.signalingState}`
-                                    );
-                                    await peerConnection.setRemoteDescription(
-                                        new RTCSessionDescription({ type: 'offer', sdp: message.data.sdp })
-                                    );
-
-                                    // Process any queued ICE candidates now that remote description is set
-                                    await processQueuedIceCandidates(fromUid);
-
-                                    console.log(
-                                        `📞 Creating answer for ${fromUid}, current state: ${peerConnection.signalingState}`
-                                    );
-                                    const answer = await peerConnection.createAnswer();
-                                    await peerConnection.setLocalDescription(answer);
-
-                                    console.log(
-                                        `📞 Sending answer to ${fromUid}, current state: ${peerConnection.signalingState}`
-                                    );
-                                    ws.send(
-                                        JSON.stringify({
-                                            type: 'answer',
-                                            roomId,
-                                            uid,
-                                            data: {
-                                                targetUid: fromUid,
-                                                sdp: answer.sdp,
-                                            },
-                                        })
-                                    );
-                                } catch (error) {
-                                    console.error(`📞 Error handling offer from ${fromUid}:`, error);
-                                }
-                            }
-                            break;
-
-                        case 'answer':
-                            if (message.data?.fromUid && message.data?.sdp) {
-                                const fromUid = message.data.fromUid;
-                                console.log(`📞 Received answer from ${fromUid}`);
-
-                                // Check if we're already processing an answer for this user
-                                if (pendingAnswersRef.current.has(fromUid)) {
-                                    console.log(`📞 Already processing answer from ${fromUid}, ignoring duplicate`);
-                                    break;
-                                }
-
-                                const peerConnection = peerConnectionsRef.current.get(fromUid);
-
-                                if (peerConnection) {
-                                    // Check if we're in the correct state to receive an answer
-                                    if (peerConnection.signalingState === 'have-local-offer') {
-                                        pendingAnswersRef.current.add(fromUid);
-                                        try {
-                                            console.log(`📞 Setting remote description for ${fromUid}`);
-                                            await peerConnection.setRemoteDescription(
-                                                new RTCSessionDescription({ type: 'answer', sdp: message.data.sdp })
-                                            );
-                                            console.log(`📞 Remote description set for ${fromUid}`);
-
-                                            // Process any queued ICE candidates now that remote description is set
-                                            await processQueuedIceCandidates(fromUid);
-                                        } catch (error) {
-                                            console.error(`📞 Error setting remote description for ${fromUid}:`, error);
-                                        } finally {
-                                            pendingAnswersRef.current.delete(fromUid);
-                                        }
-                                    } else if (peerConnection.signalingState === 'stable') {
-                                        console.log(
-                                            `📞 Peer connection with ${fromUid} is already in stable state, ignoring duplicate answer`
-                                        );
-                                    } else if (peerConnection.signalingState === 'have-remote-offer') {
-                                        console.log(
-                                            `📞 Received answer from ${fromUid} but we're in have-remote-offer state. This suggests a role conflict - both sides may be trying to initiate. Ignoring answer.`
-                                        );
-                                    } else {
-                                        console.warn(
-                                            `Received answer from ${fromUid} but peer connection is in wrong state: ${peerConnection.signalingState}`
-                                        );
-                                    }
-                                } else {
-                                    console.warn(`📞 No peer connection found for ${fromUid}`);
-                                }
-                            }
-                            break;
-
-                        case 'ice-candidate':
-                            if (message.data?.fromUid && message.data?.candidate) {
-                                const fromUid = message.data.fromUid;
-                                const peerConnection = peerConnectionsRef.current.get(fromUid);
-
-                                if (peerConnection) {
-                                    const candidate = new RTCIceCandidate(message.data.candidate);
-
-                                    // Check if we can add ICE candidates (remote description should be set)
-                                    if (peerConnection.remoteDescription) {
-                                        try {
-                                            await peerConnection.addIceCandidate(candidate);
-                                            console.log(`📞 Added ICE candidate from ${fromUid}`);
-                                        } catch (error) {
-                                            console.error(`📞 Error adding ICE candidate from ${fromUid}:`, error);
-                                        }
-                                    } else {
-                                        console.log(
-                                            `📞 Queueing ICE candidate from ${fromUid} - remote description not set yet`
-                                        );
-
-                                        // Queue the candidate for later processing
-                                        if (!pendingIceCandidatesRef.current.has(fromUid)) {
-                                            pendingIceCandidatesRef.current.set(fromUid, []);
-                                        }
-                                        pendingIceCandidatesRef.current.get(fromUid)!.push(candidate);
-                                    }
-                                }
-                            }
-                            break;
-                    }
-                } catch (error) {
-                    console.error('Error handling WebSocket message:', error);
-                }
-            };
-
-            ws.onclose = (event) => {
-                if (wsRef.current === ws) {
-                    setIsConnected(false);
-                    setIsConnecting(false);
-                    wsRef.current = null;
-                    console.log('WebSocket connection closed:', event.code, event.reason);
-
-                    // Only show error if it's not a normal closure
-                    if (event.code !== 1000 && event.code !== 1001) {
-                        onError(`WebSocket closed unexpectedly: ${event.reason || 'Unknown reason'}`);
-                    }
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error event:', error);
-                console.error('WebSocket error details:', {
-                    type: error.type,
-                    readyState: ws.readyState,
-                    url: ws.url,
-                    protocol: ws.protocol,
-                    extensions: ws.extensions,
-                    timestamp: new Date().toISOString(),
-                });
-
-                if (wsRef.current === ws) {
-                    setIsConnecting(false);
-                    setIsConnected(false);
-                    wsRef.current = null;
-
-                    // Provide more specific error messages based on WebSocket state
-                    if (ws.readyState === WebSocket.CONNECTING) {
-                        onError(
-                            'Failed to connect to voice chat server. Please check if the server is running and try again.'
-                        );
-                    } else if (ws.readyState === WebSocket.CLOSED) {
-                        onError('Voice chat connection was closed unexpectedly. Please try reconnecting.');
-                    } else {
-                        onError('Voice chat connection error. Please check your internet connection and try again.');
-                    }
-                }
-            };
-        } catch (error) {
-            console.error('Error connecting:', error);
-            setIsConnecting(false);
-            setIsConnected(false);
-
-            if (error instanceof Error) {
-                // More specific error handling
-                if (error.name === 'NotAllowedError') {
-                    onError('Microphone access denied. Please allow microphone permissions and try again.');
-                } else if (error.name === 'NotFoundError') {
-                    onError('No microphone found. Please connect a microphone and try again.');
-                } else if (error.name === 'NotReadableError') {
-                    onError('Microphone is busy or not available. Please check if other applications are using it.');
-                } else if (error.message.includes('WebSocket')) {
-                    onError('Failed to connect to voice chat server. Please check your internet connection.');
-                } else {
-                    onError(`Failed to connect to voice call: ${error.message}`);
-                }
-            } else {
-                onError('Failed to connect to voice call. Please check if the WebSocket server is running.');
-            }
-        }
-        // Remove createPeerConnection from dependencies to prevent infinite re-renders
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roomId, uid, role, onParticipantsChange, onError]);
-
-    const disconnect = useCallback(() => {
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-
-        if (localStream) {
-            localStream.getTracks().forEach((track) => track.stop());
-            setLocalStream(null);
-        }
-
-        // Clean up all remote audio elements
-        remoteAudioElementsRef.current.forEach((audio) => {
-            audio.pause();
-            audio.srcObject = null;
-            // Remove from DOM if present
-            if (audio.parentNode) {
-                audio.parentNode.removeChild(audio);
-            }
-        });
-        remoteAudioElementsRef.current.clear();
-
-        // Clean up audio context
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-
-        peerConnectionsRef.current.forEach((pc) => pc.close());
-        peerConnectionsRef.current.clear();
-
-        // Clear pending answers
-        pendingAnswersRef.current.clear();
-
-        // Clear pending ICE candidates
-        pendingIceCandidatesRef.current.clear();
-
-        setIsConnected(false);
-        setIsConnecting(false);
-        setParticipants([]);
-    }, [localStream]);
-
-    const getMediaStream = useCallback(async () => {
+    const getMediaStream = useCallback(async (): Promise<MediaStream | null> => {
         if (localStream) {
             return localStream;
         }
 
         try {
+            console.log('🎤 Requesting new media stream...');
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -733,121 +119,690 @@ export function useWebSocketVoiceCall({
                 video: false,
             });
             setLocalStream(stream);
-
-            // Initialize audio context
-            initializeAudioContext();
-
-            // Add tracks to existing peer connections
-            peerConnectionsRef.current.forEach((peerConnection) => {
-                const existingSenders = peerConnection.getSenders();
-
-                stream.getTracks().forEach((track) => {
-                    const existingSender = existingSenders.find((sender) => sender.track?.kind === track.kind);
-
-                    if (existingSender) {
-                        // Replace existing track
-                        existingSender.replaceTrack(track);
-                    } else {
-                        // Add new track
-                        peerConnection.addTrack(track, stream);
-                    }
-                });
-            });
-
+            initializeAudioContext(); // Initialize immediately upon getting stream
+            console.log('🎤 Successfully got media stream.');
             return stream;
         } catch (error) {
             console.error('Failed to get media stream:', error);
-            onError('Failed to access microphone. Please allow microphone permissions and try again.');
+            if (error instanceof Error) {
+                if (error.name === 'NotAllowedError') {
+                    onErrorRef.current('Microphone access denied. Please allow microphone permissions and try again.');
+                } else if (error.name === 'NotFoundError') {
+                    onErrorRef.current('No microphone found. Please connect a microphone and try again.');
+                } else if (error.name === 'NotReadableError') {
+                    onErrorRef.current(
+                        'Microphone is busy or not available. Please check if other applications are using it.'
+                    );
+                } else {
+                    onErrorRef.current(`Failed to access microphone: ${error.message}`);
+                }
+            } else {
+                onErrorRef.current('An unknown error occurred while trying to access the microphone.');
+            }
             return null;
         }
-    }, [localStream, onError, initializeAudioContext]);
+    }, [localStream, initializeAudioContext]);
+
+    const processQueuedIceCandidates = useCallback(async (targetUid: number) => {
+        const peerConnection = peerConnectionsRef.current.get(targetUid);
+        const queuedCandidates = pendingIceCandidatesRef.current.get(targetUid);
+
+        if (peerConnection && queuedCandidates && queuedCandidates.length > 0) {
+            if (!peerConnection.remoteDescription) {
+                console.warn(`📞 Cannot process ICE candidates for ${targetUid}: remote description not set yet.`);
+                return;
+            }
+            console.log(`📞 Processing ${queuedCandidates.length} queued ICE candidates for ${targetUid}`);
+            for (const candidate of queuedCandidates) {
+                try {
+                    await peerConnection.addIceCandidate(candidate);
+                } catch (error) {
+                    console.error(`📞 Error adding queued ICE candidate from ${targetUid}:`, error);
+                }
+            }
+            pendingIceCandidatesRef.current.delete(targetUid);
+        }
+    }, []);
+
+    const createPeerConnection = useCallback(
+        (targetUid: number) => {
+            const configuration: RTCConfiguration = {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+            };
+            const peerConnection = new RTCPeerConnection(configuration);
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(
+                        JSON.stringify({
+                            type: 'ice-candidate',
+                            roomId,
+                            uid,
+                            data: { targetUid, candidate: event.candidate },
+                        })
+                    );
+                }
+            };
+
+            peerConnection.ontrack = (event) => {
+                if (event.streams && event.streams[0]) {
+                    const remoteAudio = document.createElement('audio');
+                    remoteAudio.srcObject = event.streams[0];
+                    remoteAudio.autoplay = true;
+                    remoteAudio.controls = false; // Usually hide controls for voice calls
+                    remoteAudio.volume = 1.0;
+                    remoteAudio.muted = false;
+                    remoteAudio.setAttribute('playsinline', 'true');
+                    remoteAudio.style.display = 'none';
+                    remoteAudio.setAttribute('data-uid', targetUid.toString());
+
+                    // Ensure audio element is removed if an existing one exists
+                    const existingAudio = remoteAudioElementsRef.current.get(targetUid);
+                    if (existingAudio) {
+                        existingAudio.pause();
+                        existingAudio.srcObject = null;
+                        existingAudio.remove(); // Use .remove() for direct DOM removal
+                    }
+
+                    document.body.appendChild(remoteAudio);
+                    remoteAudioElementsRef.current.set(targetUid, remoteAudio);
+                    console.log(`🎵 [${targetUid}] Remote audio element created and added to DOM.`);
+
+                    // Web Audio API routing for better control
+                    if (audioContextRef.current) {
+                        try {
+                            const source = audioContextRef.current.createMediaStreamSource(event.streams[0]);
+                            const gainNode = audioContextRef.current.createGain();
+                            gainNode.gain.value = 1.0;
+                            source.connect(gainNode);
+                            gainNode.connect(audioContextRef.current.destination);
+                            console.log(`🎵 [${targetUid}] Web Audio API routing established.`);
+                        } catch (webAudioError) {
+                            console.error(`🎵 [${targetUid}] Web Audio API setup failed:`, webAudioError);
+                        }
+                    }
+
+                    // Autoplay logic
+                    const playRemoteAudio = async () => {
+                        try {
+                            initializeAudioContext();
+                            await resumeAudioContext();
+                            await remoteAudio.play();
+                            console.log(`🎵 [${targetUid}] Remote audio played successfully.`);
+                        } catch (error) {
+                            console.warn(`🎵 [${targetUid}] Autoplay prevented:`, error);
+                            // If autoplay fails, prompt for user interaction
+                            const handleUserGesture = async () => {
+                                document.removeEventListener('click', handleUserGesture);
+                                document.removeEventListener('keydown', handleUserGesture);
+                                try {
+                                    initializeAudioContext();
+                                    await resumeAudioContext();
+                                    await remoteAudio.play();
+                                    console.log(`🎵 [${targetUid}] Remote audio played after user gesture.`);
+                                } catch (err) {
+                                    console.error(`🎵 [${targetUid}] Failed to play after gesture:`, err);
+                                }
+                            };
+                            document.addEventListener('click', handleUserGesture, { once: true });
+                            document.addEventListener('keydown', handleUserGesture, { once: true });
+                            onErrorRef.current(
+                                'Autoplay blocked. Please interact with the page to enable remote audio.'
+                            );
+                        }
+                    };
+                    playRemoteAudio();
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.log(`📡 Peer connection for ${targetUid} state changed: ${peerConnection.connectionState}`);
+                if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+                    console.warn(
+                        `📡 Peer connection for ${targetUid} is ${peerConnection.connectionState}. Cleaning up.`
+                    );
+                    // Note: Manual retry logic removed to avoid circular dependencies
+                    // The component using this hook should handle reconnection attempts
+                }
+            };
+
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log(`📡 ICE connection state for ${targetUid}: ${peerConnection.iceConnectionState}`);
+            };
+
+            peerConnection.onsignalingstatechange = () => {
+                console.log(`📡 Signaling state for ${targetUid}: ${peerConnection.signalingState}`);
+            };
+
+            peerConnectionsRef.current.set(targetUid, peerConnection);
+            return peerConnection;
+        },
+        [roomId, uid, initializeAudioContext, resumeAudioContext]
+    ); // Removed initiateCall to avoid circular dependency
+
+    // Glare prevention logic helper
+    const shouldInitiateOffer = useCallback(
+        (fromUid: number) => {
+            // If both sides try to initiate, the one with the smaller UID wins and creates the offer.
+            // The other side (larger UID) should respond with an answer.
+            return uid < fromUid;
+        },
+        [uid]
+    );
+
+    // --- Helper function for call initiation ---
+    const initiateCall = useCallback(
+        async (targetUid: number) => {
+            console.log(`🔗 Initiating call to ${targetUid}`);
+
+            if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+                console.warn('🔗 WebSocket not connected, cannot initiate call.');
+                onErrorRef.current('Not connected to voice chat server.');
+                return;
+            }
+
+            // Glare prevention: Only initiate if our UID is smaller
+            if (uid >= targetUid) {
+                console.log(`🔗 Glare prevention: Not initiating call to ${targetUid} because ${uid} >= ${targetUid}`);
+                return;
+            }
+
+            let peerConnection = peerConnectionsRef.current.get(targetUid);
+            if (peerConnection) {
+                if (peerConnection.connectionState === 'connected') {
+                    console.log(`🔗 Connection to ${targetUid} already exists and is connected.`);
+                    return;
+                }
+                // If existing connection is not stable or closed, recreate
+                if (peerConnection.signalingState !== 'stable' && peerConnection.signalingState !== 'closed') {
+                    console.warn(
+                        `🔗 Peer connection for ${targetUid} in unstable state (${peerConnection.signalingState}), recreating.`
+                    );
+                    peerConnection.close();
+                    peerConnectionsRef.current.delete(targetUid);
+                    pendingAnswersRef.current.delete(targetUid);
+                    pendingIceCandidatesRef.current.delete(targetUid);
+                    peerConnection = undefined;
+                }
+            }
+
+            if (!peerConnection) {
+                peerConnection = createPeerConnection(targetUid);
+            }
+
+            // Add local stream tracks if not already added
+            if (localStream) {
+                const existingSenders = peerConnection.getSenders();
+                localStream.getTracks().forEach((track) => {
+                    if (!existingSenders.some((sender) => sender.track === track)) {
+                        track.enabled = !isMuted; // Apply current mute state
+                        peerConnection!.addTrack(track, localStream);
+                        console.log(`🔗 Added local track (${track.kind}) to PC for ${targetUid}`);
+                    }
+                });
+            } else {
+                console.warn(`🔗 No local stream available when initiating call to ${targetUid}.`);
+                // Consider requesting stream here if not available and role is speaker
+                const stream = await getMediaStream();
+                if (stream) {
+                    stream.getTracks().forEach((track) => {
+                        track.enabled = !isMuted;
+                        peerConnection!.addTrack(track, stream);
+                        console.log(`🔗 Added newly acquired local track (${track.kind}) to PC for ${targetUid}`);
+                    });
+                } else {
+                    onErrorRef.current('Could not get microphone access to initiate call.');
+                    return;
+                }
+            }
+
+            try {
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false,
+                });
+                await peerConnection.setLocalDescription(offer);
+
+                wsRef.current.send(
+                    JSON.stringify({
+                        type: 'offer',
+                        roomId,
+                        uid,
+                        data: { targetUid, sdp: offer.sdp },
+                    })
+                );
+                console.log(`🔗 Sent offer to ${targetUid}.`);
+            } catch (error) {
+                console.error(`🔗 Error creating/sending offer to ${targetUid}:`, error);
+                onErrorRef.current(
+                    `Failed to initiate call with ${targetUid}: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        },
+        [roomId, uid, localStream, createPeerConnection, isMuted, getMediaStream]
+    );
+
+    // --- Core WebSocket Logic ---
+
+    const setupWebSocketListeners = useCallback(
+        (ws: WebSocket) => {
+            ws.onopen = () => {
+                if (wsRef.current === ws) {
+                    setIsConnected(true);
+                    setIsConnecting(false);
+                    connectionAttemptRef.current = false; // Reset guard on successful connection
+                    retryAttemptsRef.current = 0; // Reset retry counter on successful connection
+                    updateStatus('connected');
+                    console.log('✅ Connected to WebSocket');
+
+                    // Start heartbeat
+                    heartbeatIntervalRef.current = window.setInterval(() => {
+                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                            wsRef.current.send(JSON.stringify({ type: 'heartbeat', roomId, uid }));
+                        }
+                    }, 30000); // Send heartbeat every 30 seconds
+                }
+            };
+
+            ws.onmessage = async (event) => {
+                if (wsRef.current !== ws) return;
+
+                try {
+                    const message: WebSocketMessage = JSON.parse(event.data);
+                    console.log('➡️ Received message:', message);
+
+                    switch (message.type) {
+                        case 'participant-update':
+                            if (message.data?.participants) {
+                                const updatedParticipants = message.data.participants.map((p) => ({
+                                    uid: p.uid,
+                                    role: p.role as 'speaker' | 'listener',
+                                    isMuted: p.isMuted,
+                                }));
+                                onParticipantsChangeRef.current(updatedParticipants);
+
+                                // Initiate calls to new participants (if we are speaker and they are not us)
+                                updatedParticipants.forEach((p) => {
+                                    if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
+                                        if (role === 'speaker') {
+                                            // As speaker, we initiate offers
+                                            console.log(`🔗 Initiating call to new participant: ${p.uid}`);
+                                            initiateCall(p.uid);
+                                        }
+                                    }
+                                });
+                            }
+                            break;
+
+                        case 'offer':
+                            if (message.data?.fromUid && message.data?.sdp) {
+                                const fromUid = message.data.fromUid;
+                                console.log(`📞 Received offer from ${fromUid}`);
+
+                                if (!shouldInitiateOffer(fromUid)) {
+                                    // If we are the one that should initiate (smaller UID), then this is a duplicate offer.
+                                    // Or if our signaling state is already in have-local-offer, we're in conflict.
+                                    const pc = peerConnectionsRef.current.get(fromUid);
+                                    if (pc && pc.signalingState === 'have-local-offer') {
+                                        console.warn(
+                                            `📞 Glare prevention: Received offer from ${fromUid} but we already sent an offer. Ignoring.`
+                                        );
+                                        break;
+                                    }
+                                }
+
+                                let peerConnection = peerConnectionsRef.current.get(fromUid);
+
+                                if (peerConnection && peerConnection.signalingState !== 'stable') {
+                                    // If existing connection is not stable, tear it down and recreate
+                                    console.warn(
+                                        `📞 Peer connection for ${fromUid} in unstable state (${peerConnection.signalingState}), recreating.`
+                                    );
+                                    peerConnection.close();
+                                    peerConnectionsRef.current.delete(fromUid);
+                                    pendingAnswersRef.current.delete(fromUid);
+                                    pendingIceCandidatesRef.current.delete(fromUid);
+                                    peerConnection = undefined;
+                                }
+
+                                if (!peerConnection) {
+                                    peerConnection = createPeerConnection(fromUid);
+                                }
+
+                                // Add local stream tracks to the new peer connection if not already added
+                                if (localStream && peerConnection.getSenders().length === 0) {
+                                    localStream.getTracks().forEach((track) => {
+                                        track.enabled = !isMuted; // Set initial mute state
+                                        peerConnection?.addTrack(track, localStream);
+                                        console.log(`📞 Added local track (${track.kind}) to PC for ${fromUid}`);
+                                    });
+                                }
+
+                                await peerConnection.setRemoteDescription(
+                                    new RTCSessionDescription({ type: 'offer', sdp: message.data.sdp })
+                                );
+
+                                const answer = await peerConnection.createAnswer();
+                                await peerConnection.setLocalDescription(answer);
+
+                                ws.send(
+                                    JSON.stringify({
+                                        type: 'answer',
+                                        roomId,
+                                        uid,
+                                        data: { targetUid: fromUid, sdp: answer.sdp },
+                                    })
+                                );
+                                processQueuedIceCandidates(fromUid);
+                            }
+                            break;
+
+                        case 'answer':
+                            if (message.data?.fromUid && message.data?.sdp) {
+                                const fromUid = message.data.fromUid;
+                                console.log(`📞 Received answer from ${fromUid}`);
+                                const peerConnection = peerConnectionsRef.current.get(fromUid);
+
+                                if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+                                    await peerConnection.setRemoteDescription(
+                                        new RTCSessionDescription({ type: 'answer', sdp: message.data.sdp })
+                                    );
+                                    processQueuedIceCandidates(fromUid);
+                                } else {
+                                    console.warn(
+                                        `📞 Ignoring answer from ${fromUid}, unexpected signaling state: ${peerConnection?.signalingState}`
+                                    );
+                                }
+                            }
+                            break;
+
+                        case 'ice-candidate':
+                            if (message.data?.fromUid && message.data?.candidate) {
+                                const fromUid = message.data.fromUid;
+                                const peerConnection = peerConnectionsRef.current.get(fromUid);
+                                const candidate = new RTCIceCandidate(message.data.candidate);
+
+                                if (peerConnection) {
+                                    if (peerConnection.remoteDescription) {
+                                        try {
+                                            await peerConnection.addIceCandidate(candidate);
+                                        } catch (e) {
+                                            console.error(`📞 Error adding ICE candidate:`, e, candidate);
+                                        }
+                                    } else {
+                                        // Queue if remote description is not set yet
+                                        if (!pendingIceCandidatesRef.current.has(fromUid)) {
+                                            pendingIceCandidatesRef.current.set(fromUid, []);
+                                        }
+                                        pendingIceCandidatesRef.current.get(fromUid)!.push(candidate);
+                                        console.log(`📞 Queued ICE candidate from ${fromUid}`);
+                                    }
+                                }
+                            }
+                            break;
+
+                        case 'leave':
+                            if (typeof message.data?.uid === 'number') {
+                                const leftUid = message.data.uid;
+                                console.log(`👋 User ${leftUid} left.`);
+                                const pc = peerConnectionsRef.current.get(leftUid);
+                                if (pc) {
+                                    pc.close();
+                                    peerConnectionsRef.current.delete(leftUid);
+                                    console.log(`🗑️ Closed peer connection for ${leftUid}.`);
+                                }
+                                const audioEl = remoteAudioElementsRef.current.get(leftUid);
+                                if (audioEl) {
+                                    audioEl.pause();
+                                    audioEl.srcObject = null;
+                                    audioEl.remove();
+                                    remoteAudioElementsRef.current.delete(leftUid);
+                                    console.log(`🗑️ Removed audio element for ${leftUid}.`);
+                                }
+                                // Update participants list
+                                const updatedParticipants = participantsRef.current.filter((p) => p.uid !== leftUid);
+                                onParticipantsChangeRef.current(updatedParticipants);
+                            }
+                            break;
+
+                        case 'mute':
+                        case 'unmute':
+                            if (message.data?.uid) {
+                                const targetUid = message.data.uid;
+                                const isMutedByPeer = message.type === 'mute';
+                                console.log(`🗣️ User ${targetUid} is now ${isMutedByPeer ? 'muted' : 'unmuted'}.`);
+                                // Update participants via callback, letting component manage state
+                                const updatedParticipants = participantsRef.current.map((p) =>
+                                    p.uid === targetUid ? { ...p, isMuted: isMutedByPeer } : p
+                                );
+                                onParticipantsChangeRef.current(updatedParticipants);
+                            }
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error handling WebSocket message:', error);
+                    onErrorRef.current(
+                        `Failed to process message: ${error instanceof Error ? error.message : String(error)}`
+                    );
+                }
+            };
+
+            ws.onclose = (event) => {
+                if (heartbeatIntervalRef.current) {
+                    clearInterval(heartbeatIntervalRef.current);
+                    heartbeatIntervalRef.current = null;
+                }
+                if (wsRef.current === ws) {
+                    setIsConnected(false);
+                    setIsConnecting(false);
+                    connectionAttemptRef.current = false; // Reset guard on connection close
+                    wsRef.current = null;
+                    console.log('❌ WebSocket connection closed:', event.code, event.reason);
+                    updateStatus('disconnected');
+
+                    // Attempt to reconnect if not a normal closure or explicit disconnect
+                    if (event.code !== 1000 && event.code !== 1001 && retryAttemptsRef.current < maxRetries) {
+                        retryAttemptsRef.current++;
+                        console.log(`Attempting to reconnect (attempt ${retryAttemptsRef.current}/${maxRetries})...`);
+                        // Use setTimeout to schedule reconnection without circular dependency
+                        setTimeout(() => {
+                            // Note: Reconnection logic moved to useEffect to avoid circular dependency
+                        }, retryDelayMs * retryAttemptsRef.current);
+                        onErrorRef.current(`WebSocket closed: ${event.reason || 'Unknown reason'}. Reconnecting...`);
+                    } else if (event.code !== 1000 && event.code !== 1001) {
+                        onErrorRef.current(
+                            `WebSocket connection permanently closed: ${event.reason || 'Unknown reason'}.`
+                        );
+                    }
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('🔥 WebSocket error event:', error);
+                if (wsRef.current === ws) {
+                    setIsConnecting(false);
+                    setIsConnected(false);
+                    connectionAttemptRef.current = false; // Reset guard on error
+                    wsRef.current = null;
+                    updateStatus('error');
+                    onErrorRef.current('WebSocket connection error. Attempting to reconnect...');
+                    // Trigger reconnect on error as well
+                    if (retryAttemptsRef.current < maxRetries) {
+                        retryAttemptsRef.current++;
+                        console.log(`Attempting to reconnect (attempt ${retryAttemptsRef.current}/${maxRetries})...`);
+                        // Note: Reconnection logic moved to useEffect to avoid circular dependency
+                    } else {
+                        onErrorRef.current('WebSocket connection failed permanently.');
+                    }
+                }
+            };
+        },
+        [
+            roomId,
+            uid,
+            createPeerConnection,
+            processQueuedIceCandidates,
+            isMuted,
+            localStream,
+            shouldInitiateOffer,
+            updateStatus,
+            role,
+            initiateCall,
+        ]
+    );
+
+    const connect = useCallback(async () => {
+        // Prevent multiple simultaneous connection attempts
+        if (connectionAttemptRef.current) {
+            console.log('Connection attempt already in progress, skipping...');
+            return;
+        }
+
+        if (
+            wsRef.current &&
+            (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
+        ) {
+            console.log('WebSocket already connected or connecting.');
+            return;
+        }
+
+        if (isConnecting) {
+            console.log('Already in the process of connecting.');
+            return;
+        }
+
+        connectionAttemptRef.current = true; // Set guard
+        setIsConnecting(true);
+        updateStatus('connecting');
+
+        // Close any stale connection before initiating a new one
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        try {
+            // Get microphone access before connecting to WebSocket
+            const stream = await getMediaStream();
+            if (!stream) {
+                setIsConnecting(false);
+                updateStatus('error');
+                connectionAttemptRef.current = false; // Reset guard
+                return; // getMediaStream will handle onError
+            }
+
+            console.log('Attempting to connect WebSocket...');
+            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080'}/voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws; // Store reference immediately
+
+            // Set up listeners for the new WebSocket instance
+            setupWebSocketListeners(ws);
+        } catch (error) {
+            console.error('Error initiating WebSocket connection:', error);
+            setIsConnecting(false);
+            setIsConnected(false);
+            updateStatus('error');
+            connectionAttemptRef.current = false; // Reset guard
+            onErrorRef.current(
+                `Failed to initiate WebSocket connection: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
+    }, [roomId, uid, role, isConnecting, getMediaStream, setupWebSocketListeners, updateStatus]);
+
+    const disconnect = useCallback(() => {
+        console.log('🔌 Disconnecting voice call...');
+        updateStatus('disconnected');
+        connectionAttemptRef.current = false; // Reset guard
+
+        // Clear heartbeat
+        if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+            heartbeatIntervalRef.current = null;
+        }
+
+        if (wsRef.current) {
+            wsRef.current.close(1000, 'User initiated disconnect'); // Use code 1000 for normal closure
+            wsRef.current = null;
+        }
+
+        // Stop all local media tracks
+        if (localStream) {
+            localStream.getTracks().forEach((track) => {
+                track.stop();
+                console.log(`🔌 Stopped local track: ${track.kind}`);
+            });
+            setLocalStream(null);
+        }
+
+        // Close all peer connections and clean up
+        peerConnectionsRef.current.forEach((pc, targetUid) => {
+            pc.getSenders().forEach((sender) => sender.track?.stop()); // Stop tracks before closing PC
+            pc.close();
+            console.log(`🔌 Closed peer connection for ${targetUid}`);
+        });
+        peerConnectionsRef.current.clear();
+
+        // Remove all remote audio elements
+        remoteAudioElementsRef.current.forEach((audioEl, targetUid) => {
+            audioEl.pause();
+            audioEl.srcObject = null;
+            audioEl.remove();
+            console.log(`🔌 Removed remote audio element for ${targetUid}`);
+        });
+        remoteAudioElementsRef.current.clear();
+
+        // Close audio context
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            try {
+                audioContextRef.current.close();
+                console.log('🔌 Audio context closed.');
+            } catch (error) {
+                console.warn('Error closing audio context:', error);
+            }
+            audioContextRef.current = null;
+        }
+
+        // Clear pending states
+        pendingAnswersRef.current.clear();
+        pendingIceCandidatesRef.current.clear();
+        retryAttemptsRef.current = 0;
+
+        setIsConnected(false);
+        setIsConnecting(false);
+        onParticipantsChangeRef.current([]);
+    }, [localStream, updateStatus]);
 
     const toggleMute = useCallback(async () => {
         console.log('🔊 Toggle mute called, current state:', isMuted);
 
-        // Get media stream if not available (for listeners)
-        let stream = localStream;
-        if (!stream) {
-            console.log('🔊 No local stream, getting media stream...');
-            stream = await getMediaStream();
-            if (!stream) return;
-        }
-
-        if (!wsRef.current) {
-            console.log('🔊 No WebSocket connection');
+        if (!localStream) {
+            console.warn('🔊 No local stream available to toggle mute.');
+            onErrorRef.current('Microphone stream not available. Please ensure microphone access.');
             return;
         }
 
-        const audioTrack = stream.getAudioTracks()[0];
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            console.warn('🔊 WebSocket not connected, cannot toggle mute state on server.');
+            onErrorRef.current('Not connected to voice chat server.');
+            return;
+        }
+
+        const audioTrack = localStream.getAudioTracks()[0];
         if (audioTrack) {
             const newMutedState = !isMuted;
-            console.log('🔊 Audio track found, changing to:', newMutedState ? 'muted' : 'unmuted');
-
-            // Initialize audio context if not already done
-            initializeAudioContext();
-
-            // Resume audio context before unmuting
-            if (!newMutedState) {
-                console.log('🔊 Resuming audio context...');
-                await resumeAudioContext();
-            }
-
-            // Update the track enabled state
             audioTrack.enabled = !newMutedState;
-            console.log('🔊 Local audio track enabled:', audioTrack.enabled);
-
-            // Force update the track in all peer connections
-            let peerConnectionCount = 0;
-            peerConnectionsRef.current.forEach((peerConnection, targetUid) => {
-                peerConnectionCount++;
-                const senders = peerConnection.getSenders();
-                console.log(`🔊 Peer connection ${targetUid} has ${senders.length} senders`);
-
-                const audioSender = senders.find((sender) => sender.track && sender.track.kind === 'audio');
-
-                if (audioSender && audioSender.track) {
-                    audioSender.track.enabled = !newMutedState;
-                    console.log(`🔊 Updated audio sender track for ${targetUid}, enabled:`, audioSender.track.enabled);
-
-                    // Force renegotiation if unmuting
-                    if (!newMutedState) {
-                        console.log(`🔊 Forcing renegotiation for ${targetUid}...`);
-                        peerConnection
-                            .createOffer()
-                            .then((offer) => {
-                                return peerConnection.setLocalDescription(offer);
-                            })
-                            .then(() => {
-                                if (wsRef.current) {
-                                    wsRef.current.send(
-                                        JSON.stringify({
-                                            type: 'offer',
-                                            roomId,
-                                            uid,
-                                            data: {
-                                                targetUid,
-                                                sdp: peerConnection.localDescription?.sdp,
-                                            },
-                                        })
-                                    );
-                                }
-                            })
-                            .catch((error) => {
-                                console.error(`🔊 Failed to renegotiate for ${targetUid}:`, error);
-                            });
-                    }
-                } else {
-                    console.log(`🔊 No audio sender found for ${targetUid}`);
-                }
-            });
-
-            console.log(`🔊 Updated ${peerConnectionCount} peer connections`);
-
             setIsMuted(newMutedState);
 
-            console.log(`🔊 Audio track ${newMutedState ? 'muted' : 'unmuted'}, enabled: ${audioTrack.enabled}`);
+            console.log(`🔊 Local audio track set to enabled: ${audioTrack.enabled}`);
 
-            // Send mute/unmute message
+            // Update local participants state immediately for responsiveness
+            const updatedParticipants = participantsRef.current.map((p) =>
+                p.uid === uid ? { ...p, isMuted: newMutedState } : p
+            );
+            onParticipantsChangeRef.current(updatedParticipants);
+
+            // Inform peers via WebSocket
             wsRef.current.send(
                 JSON.stringify({
                     type: newMutedState ? 'mute' : 'unmute',
@@ -856,261 +811,66 @@ export function useWebSocketVoiceCall({
                 })
             );
 
-            // Update backend
+            // Update backend (optional, if your backend tracks mute state)
             try {
                 await fetch('/api/rooms/participant', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ roomId, uid, isMuted: newMutedState }),
                 });
+                console.log(`🔊 Backend mute state updated to: ${newMutedState}`);
             } catch (error) {
-                console.error('Failed to update mute state:', error);
+                console.error('Failed to update mute state on backend:', error);
             }
         } else {
-            console.log('🔊 No audio track found in stream');
+            console.warn('🔊 No audio track found in local stream to toggle mute.');
+            onErrorRef.current('No audio track found for muting/unmuting.');
         }
-    }, [isMuted, localStream, roomId, uid, getMediaStream, initializeAudioContext, resumeAudioContext]);
+    }, [isMuted, localStream, roomId, uid]);
 
-    const initiateCall = useCallback(
-        async (targetUid: number) => {
-            console.log(`🔗 Initiating call to ${targetUid}`);
-
-            if (!wsRef.current) {
-                console.log('🔗 No WebSocket connection');
-                return;
-            }
-
-            // Check if we already have a connection
-            const existingConnection = peerConnectionsRef.current.get(targetUid);
-            if (existingConnection && existingConnection.connectionState === 'connected') {
-                console.log(`🔗 Connection to ${targetUid} already exists and is connected`);
-                return;
-            }
-
-            const peerConnection = createPeerConnection(targetUid);
-
-            // Add local stream tracks if available
-            if (localStream) {
-                console.log(`🔗 Adding local stream tracks to peer connection for ${targetUid}`);
-                const audioTracks = localStream.getAudioTracks();
-                console.log(`🔗 Found ${audioTracks.length} audio tracks`);
-
-                localStream.getTracks().forEach((track) => {
-                    console.log(
-                        `🔗 Adding track: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`
-                    );
-                    // Ensure track is enabled (not muted by default)
-                    if (track.kind === 'audio') {
-                        track.enabled = !isMuted;
-                        console.log(`🔗 Audio track enabled set to: ${track.enabled} (muted: ${isMuted})`);
-
-                        // Additional debugging for audio track
-                        console.log(`🔗 Audio track settings:`, {
-                            kind: track.kind,
-                            enabled: track.enabled,
-                            readyState: track.readyState,
-                            muted: track.muted,
-                            id: track.id,
-                            label: track.label,
-                        });
-                    }
-
-                    try {
-                        const sender = peerConnection.addTrack(track, localStream);
-                        console.log(`🔗 Successfully added track, sender:`, sender);
-                    } catch (error) {
-                        console.error(`🔗 Failed to add track:`, error);
-                    }
-                });
-
-                // Verify tracks were added
-                const senders = peerConnection.getSenders();
-                console.log(`🔗 Peer connection has ${senders.length} senders`);
-                senders.forEach((sender, index) => {
-                    if (sender.track) {
-                        console.log(`🔗 Sender ${index}: ${sender.track.kind} track, enabled: ${sender.track.enabled}`);
-                    }
-                });
-            } else {
-                console.log(`🔗 No local stream available for ${targetUid}`);
-            }
-
-            try {
-                console.log(`🔗 Creating offer for ${targetUid}, current state: ${peerConnection.signalingState}`);
-                const offer = await peerConnection.createOffer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: false,
-                });
-
-                console.log(
-                    `🔗 Setting local description for ${targetUid}, current state: ${peerConnection.signalingState}`
-                );
-                await peerConnection.setLocalDescription(offer);
-
-                console.log(`🔗 Sending offer to ${targetUid}, current state: ${peerConnection.signalingState}`);
-                wsRef.current.send(
-                    JSON.stringify({
-                        type: 'offer',
-                        roomId,
-                        uid,
-                        data: {
-                            targetUid,
-                            sdp: offer.sdp,
-                        },
-                    })
-                );
-            } catch (error) {
-                console.error(`🔗 Error creating offer for ${targetUid}:`, error);
-            }
-        },
-        [roomId, uid, localStream, createPeerConnection, isMuted]
-    );
-
-    // Helper function to process queued ICE candidates
-    const processQueuedIceCandidates = useCallback(async (targetUid: number) => {
-        const peerConnection = peerConnectionsRef.current.get(targetUid);
-        const queuedCandidates = pendingIceCandidatesRef.current.get(targetUid);
-
-        if (peerConnection && queuedCandidates && queuedCandidates.length > 0) {
-            console.log(`📞 Processing ${queuedCandidates.length} queued ICE candidates for ${targetUid}`);
-
-            for (const candidate of queuedCandidates) {
-                try {
-                    await peerConnection.addIceCandidate(candidate);
-                    console.log(`📞 Added queued ICE candidate from ${targetUid}`);
-                } catch (error) {
-                    console.error(`📞 Error adding queued ICE candidate from ${targetUid}:`, error);
-                }
-            }
-
-            // Clear the queue
-            pendingIceCandidatesRef.current.delete(targetUid);
-        }
-    }, []);
-
-    // Auto-enable audio on any user interaction for seamless experience
-    const autoEnableAudio = useCallback(() => {
-        const enableAudioOnInteraction = async () => {
-            try {
-                if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-                    await audioContextRef.current.resume();
-                    console.log('🎵 Audio context auto-resumed on user interaction');
-                }
-
-                // Try to play all remote audio elements
-                const remoteAudioElements = document.querySelectorAll('audio[data-uid]');
-                remoteAudioElements.forEach(async (audio) => {
-                    try {
-                        if ((audio as HTMLAudioElement).paused) {
-                            await (audio as HTMLAudioElement).play();
-                            console.log(`🎵 Auto-played audio for UID: ${audio.getAttribute('data-uid')}`);
-                        }
-                    } catch {
-                        // Silent fail for autoplay
-                    }
-                });
-            } catch {
-                // Silent fail for auto-enable
-            }
-        };
-
-        // Add event listeners for common user interactions
-        ['click', 'keydown', 'touchstart', 'mousedown'].forEach((eventType) => {
-            document.addEventListener(eventType, enableAudioOnInteraction, { once: true });
-        });
-    }, []);
-
-    // Set up auto-enable on mount
-    useEffect(() => {
-        autoEnableAudio();
-    }, [autoEnableAudio]);
+    // --- Effects ---
 
     useEffect(() => {
+        // Initial connection attempt when component mounts
         let mounted = true;
 
-        const attemptConnection = async () => {
-            if (mounted && !wsRef.current) {
+        // Add a small delay to avoid rapid reconnections during development hot reload
+        const timer = setTimeout(async () => {
+            if (mounted && !wsRef.current && !connectionAttemptRef.current) {
                 await connect();
             }
-        };
-
-        attemptConnection();
+        }, 100); // 100ms delay
 
         return () => {
+            // Cleanup on unmount
             mounted = false;
+            clearTimeout(timer);
             disconnect();
         };
-        // Only connect when room parameters change, not when callbacks change
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roomId, uid, role]);
+    }, []); // Empty dependency array - only run once on mount
 
-    // Function to verify and fix audio track issues
-    const verifyAndFixAudioTracks = useCallback(() => {
-        if (!localStream) {
-            console.log('🔧 No local stream to verify');
-            return;
-        }
-
-        console.log('🔧 Verifying audio tracks...');
-        const audioTracks = localStream.getAudioTracks();
-        console.log(`🔧 Found ${audioTracks.length} audio tracks`);
-
-        audioTracks.forEach((track, index) => {
-            console.log(`🔧 Track ${index} status:`, {
-                kind: track.kind,
-                enabled: track.enabled,
-                readyState: track.readyState,
-                muted: track.muted,
-                id: track.id,
-                label: track.label,
-            });
-
-            // Force enable if not muted
-            if (!isMuted && !track.enabled) {
-                console.log(`🔧 Enabling track ${index}`);
-                track.enabled = true;
-            }
-        });
-
-        // Verify tracks in all peer connections
-        peerConnectionsRef.current.forEach((peerConnection, targetUid) => {
-            const senders = peerConnection.getSenders();
-            console.log(`🔧 Checking peer connection to ${targetUid}, ${senders.length} senders`);
-
-            senders.forEach((sender, senderIndex) => {
-                if (sender.track && sender.track.kind === 'audio') {
-                    console.log(`🔧 Sender ${senderIndex} to ${targetUid}:`, {
-                        kind: sender.track.kind,
-                        enabled: sender.track.enabled,
-                        readyState: sender.track.readyState,
-                        muted: sender.track.muted,
-                    });
-
-                    // Force enable if not muted
-                    if (!isMuted && !sender.track.enabled) {
-                        console.log(`🔧 Enabling sender track ${senderIndex} to ${targetUid}`);
-                        sender.track.enabled = true;
-                    }
+    // Effect for participants change to initiate calls if role is speaker
+    useEffect(() => {
+        if (isConnected && role === 'speaker') {
+            participantsRef.current.forEach((p) => {
+                if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
+                    console.log(
+                        `🔗 Proactively initiating call to new participant ${p.uid} due to participant update.`
+                    );
+                    initiateCall(p.uid);
                 }
             });
-        });
-    }, [localStream, isMuted]);
-
-    // Call verifyAndFixAudioTracks on participant update to ensure audio tracks are always enabled
-    useEffect(() => {
-        verifyAndFixAudioTracks();
-    }, [participants, verifyAndFixAudioTracks]);
+        }
+    }, [participants, isConnected, role, uid, initiateCall]);
 
     return {
         isConnected,
-        participants,
         isMuted,
         toggleMute,
         initiateCall,
         disconnect,
-        connect,
-        getMediaStream,
+        connect, // Expose connect for manual retry
         hasMediaStream: !!localStream,
-        verifyAndFixAudioTracks, // Add this function for debugging
     };
 }

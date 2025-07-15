@@ -21,6 +21,7 @@ RUN npm ci --omit=dev
 # Stage 3: Final Image (named 'runner')
 FROM node:20-alpine AS runner
 WORKDIR /app
+
 ENV NODE_ENV=production
 ARG DATABASE_URL
 ARG NEXT_PUBLIC_WEBSOCKET_URL

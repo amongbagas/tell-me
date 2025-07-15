@@ -1,0 +1,15 @@
+name: Build and Push Docker Image to Docker Hub
+on: [workflow_dispatch]
+
+jobs:
+    runs-on:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+            - name: Build Image
+              run: docker build -t amongbagas/tellme-app:latest .
+            - name: Log in to Docker Hub
+              run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
+            - name: Push Image
+              run: docker push amongbagas/tellme-app:latest

@@ -886,24 +886,31 @@ export function useWebSocketVoiceCall({
     // --- Effects ---
 
     useEffect(() => {
-        // Initial connection attempt when component mounts
+        // Initial connection attempt when component mounts and uid is valid
         let mounted = true;
 
-        // Add a small delay to avoid rapid reconnections during development hot reload
-        const timer = setTimeout(async () => {
-            if (mounted && !wsRef.current && !connectionAttemptRef.current) {
-                await connect();
-            }
-        }, 100); // 100ms delay
+        // Only connect if we have a valid uid and required params
+        if (uid && roomId && role) {
+            // Add a small delay to avoid rapid reconnections during development hot reload
+            const timer = setTimeout(async () => {
+                if (mounted && !wsRef.current && !connectionAttemptRef.current) {
+                    await connect();
+                }
+            }, 100); // 100ms delay
+
+            return () => {
+                // Cleanup on unmount
+                mounted = false;
+                clearTimeout(timer);
+                disconnect();
+            };
+        }
 
         return () => {
-            // Cleanup on unmount
             mounted = false;
-            clearTimeout(timer);
-            disconnect();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Empty dependency array - only run once on mount
+    }, [uid, roomId, role]); // Depend on uid, roomId, and role
 
     // Effect for participants change to initiate calls if role is speaker
     // useEffect(() => {

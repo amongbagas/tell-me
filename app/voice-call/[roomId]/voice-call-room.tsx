@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,6 +23,12 @@ type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 // Helper function for consistent UID generation
 const getOrCreateUid = (roomId: string): number => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
+        // If on server or sessionStorage not available, return a random UID
+        return Math.floor(Math.random() * 9999) + 1;
+    }
+
     const storageKey = `vc-uid-${roomId}`;
     let storedUid = Number(sessionStorage.getItem(storageKey));
     if (!storedUid) {
@@ -44,8 +50,17 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
 
-    // Memoize UID generation to ensure it only runs once per component instance
-    const uid = useMemo(() => getOrCreateUid(roomId), [roomId]);
+    // Generate UID only on client side
+    const [uid, setUid] = useState<number>(0);
+
+    // Initialize UID on client side only
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const generatedUid = getOrCreateUid(roomId);
+            setUid(generatedUid);
+            setLocalUid(generatedUid);
+        }
+    }, [roomId]);
 
     // Memoize the participants change handler to prevent infinite re-renders
     const handleParticipantsChange = useCallback((newParticipants: Participant[]) => {
@@ -66,7 +81,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
 
     const { isMuted, toggleMute, initiateCall, disconnect, connect, peerConnectionsRef } = useWebSocketVoiceCall({
         roomId,
-        uid,
+        uid: uid || 1, // Use a fallback UID if not yet initialized
         role,
         onParticipantsChange: handleParticipantsChange,
         onError: handleError,
@@ -111,14 +126,10 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
         }
     }, []);
 
-    // --- Effect for Initial UID Setting ---
-    useEffect(() => {
-        setLocalUid(uid);
-    }, [uid]);
-
     // --- Effect for Connection Status and Backend Sync ---
     useEffect(() => {
-        if (connectionStatus === 'connected') {
+        if (connectionStatus === 'connected' && uid > 0) {
+            // Only proceed if UID is initialized
             setErrorMessage(null); // Clear any previous errors
 
             // Check if user interaction is still needed for audio context (e.g., if hook couldn't resume it)
@@ -165,7 +176,8 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
 
     // --- Effect for Initiating Calls to New Participants ---
     useEffect(() => {
-        if (connectionStatus === 'connected' && participants.length > 0) {
+        if (connectionStatus === 'connected' && participants.length > 0 && uid > 0) {
+            // Only proceed if UID is initialized
             console.log('👥 WebSocket Participants updated:', participants);
             console.log('👤 Current user UID:', uid, 'Role:', role);
 
@@ -318,6 +330,26 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
 
     const isWaitingForSpeaker = role === 'listener' && !participants.some((p) => p.role === 'speaker');
     const displayIsConnected = connectionStatus === 'connected';
+
+    // Show loading if UID is not yet initialized
+    if (uid === 0) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-[300px]">
+                    <CardHeader>
+                        <CardTitle className="text-center">Memuat...</CardTitle>
+                        <CardDescription className="text-center">Menginisialisasi sesi...</CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        <div className="flex flex-col items-center space-y-4">
+                            <Loader2 className="h-12 w-12 text-primary animate-spin" />
+                            <p className="text-muted-foreground">Menyiapkan ID Unik</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
     if (connectionStatus === 'connecting') {
         return (

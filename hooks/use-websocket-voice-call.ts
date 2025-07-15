@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from "react";
 
 export interface WebSocketMessage {
-    type: 'join' | 'leave' | 'mute' | 'unmute' | 'offer' | 'answer' | 'ice-candidate' | 'participant-update';
+    type: "join" | "leave" | "mute" | "unmute" | "offer" | "answer" | "ice-candidate" | "participant-update";
     roomId: string;
     uid: number;
-    role?: 'speaker' | 'listener';
+    role?: "speaker" | "listener";
     data?: {
         action?: string;
         participants?: Array<{ uid: number; role: string; isMuted: boolean }>;
@@ -19,17 +19,17 @@ export interface WebSocketMessage {
 
 export interface Participant {
     uid: number;
-    role: 'speaker' | 'listener';
+    role: "speaker" | "listener";
     isMuted: boolean;
 }
 
 export interface UseWebSocketVoiceCallProps {
     roomId: string;
     uid: number;
-    role: 'speaker' | 'listener';
+    role: "speaker" | "listener";
     onParticipantsChange: (participants: Participant[]) => void;
     onError: (error: string) => void;
-    onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
+    onStatusChange?: (status: "connecting" | "connected" | "disconnected" | "error") => void;
 }
 
 export function useWebSocketVoiceCall({
@@ -71,7 +71,7 @@ export function useWebSocketVoiceCall({
 
     // --- Utility Functions ---
 
-    const updateStatus = useCallback((status: 'connecting' | 'connected' | 'disconnected' | 'error') => {
+    const updateStatus = useCallback((status: "connecting" | "connected" | "disconnected" | "error") => {
         onStatusChangeRef.current?.(status);
     }, []);
 
@@ -80,20 +80,20 @@ export function useWebSocketVoiceCall({
             try {
                 audioContextRef.current = new (window.AudioContext ||
                     (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)();
-                console.log('🎵 Audio context initialized');
+                console.log("🎵 Audio context initialized");
             } catch (error) {
-                console.error('Failed to initialize audio context:', error);
+                console.error("Failed to initialize audio context:", error);
             }
         }
     }, []);
 
     const resumeAudioContext = useCallback(async () => {
-        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
             try {
                 await audioContextRef.current.resume();
-                console.log('🎵 Audio context resumed');
+                console.log("🎵 Audio context resumed");
             } catch (error) {
-                console.error('Failed to resume audio context:', error);
+                console.error("Failed to resume audio context:", error);
             }
         }
     }, []);
@@ -104,7 +104,7 @@ export function useWebSocketVoiceCall({
         }
 
         try {
-            console.log('🎤 Requesting new media stream...');
+            console.log("🎤 Requesting new media stream...");
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
@@ -117,24 +117,24 @@ export function useWebSocketVoiceCall({
             });
             setLocalStream(stream);
             initializeAudioContext(); // Initialize immediately upon getting stream
-            console.log('🎤 Successfully got media stream.');
+            console.log("🎤 Successfully got media stream.");
             return stream;
         } catch (error) {
-            console.error('Failed to get media stream:', error);
+            console.error("Failed to get media stream:", error);
             if (error instanceof Error) {
-                if (error.name === 'NotAllowedError') {
-                    onErrorRef.current('Microphone access denied. Please allow microphone permissions and try again.');
-                } else if (error.name === 'NotFoundError') {
-                    onErrorRef.current('No microphone found. Please connect a microphone and try again.');
-                } else if (error.name === 'NotReadableError') {
+                if (error.name === "NotAllowedError") {
+                    onErrorRef.current("Microphone access denied. Please allow microphone permissions and try again.");
+                } else if (error.name === "NotFoundError") {
+                    onErrorRef.current("No microphone found. Please connect a microphone and try again.");
+                } else if (error.name === "NotReadableError") {
                     onErrorRef.current(
-                        'Microphone is busy or not available. Please check if other applications are using it.'
+                        "Microphone is busy or not available. Please check if other applications are using it."
                     );
                 } else {
                     onErrorRef.current(`Failed to access microphone: ${error.message}`);
                 }
             } else {
-                onErrorRef.current('An unknown error occurred while trying to access the microphone.');
+                onErrorRef.current("An unknown error occurred while trying to access the microphone.");
             }
             return null;
         }
@@ -164,7 +164,7 @@ export function useWebSocketVoiceCall({
     const createPeerConnection = useCallback(
         (targetUid: number) => {
             const configuration: RTCConfiguration = {
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }],
             };
             const peerConnection = new RTCPeerConnection(configuration);
 
@@ -172,7 +172,7 @@ export function useWebSocketVoiceCall({
                 if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                     wsRef.current.send(
                         JSON.stringify({
-                            type: 'ice-candidate',
+                            type: "ice-candidate",
                             roomId,
                             uid,
                             data: { targetUid, candidate: event.candidate },
@@ -183,15 +183,15 @@ export function useWebSocketVoiceCall({
 
             peerConnection.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    const remoteAudio = document.createElement('audio');
+                    const remoteAudio = document.createElement("audio");
                     remoteAudio.srcObject = event.streams[0];
                     remoteAudio.autoplay = true;
                     remoteAudio.controls = false; // Usually hide controls for voice calls
                     remoteAudio.volume = 1.0;
                     remoteAudio.muted = false;
-                    remoteAudio.setAttribute('playsinline', 'true');
-                    remoteAudio.style.display = 'none';
-                    remoteAudio.setAttribute('data-uid', targetUid.toString());
+                    remoteAudio.setAttribute("playsinline", "true");
+                    remoteAudio.style.display = "none";
+                    remoteAudio.setAttribute("data-uid", targetUid.toString());
 
                     // Ensure audio element is removed if an existing one exists
                     const existingAudio = remoteAudioElementsRef.current.get(targetUid);
@@ -230,8 +230,8 @@ export function useWebSocketVoiceCall({
                             console.warn(`🎵 [${targetUid}] Autoplay prevented:`, error);
                             // If autoplay fails, prompt for user interaction
                             const handleUserGesture = async () => {
-                                document.removeEventListener('click', handleUserGesture);
-                                document.removeEventListener('keydown', handleUserGesture);
+                                document.removeEventListener("click", handleUserGesture);
+                                document.removeEventListener("keydown", handleUserGesture);
                                 try {
                                     initializeAudioContext();
                                     await resumeAudioContext();
@@ -241,10 +241,10 @@ export function useWebSocketVoiceCall({
                                     console.error(`🎵 [${targetUid}] Failed to play after gesture:`, err);
                                 }
                             };
-                            document.addEventListener('click', handleUserGesture, { once: true });
-                            document.addEventListener('keydown', handleUserGesture, { once: true });
+                            document.addEventListener("click", handleUserGesture, { once: true });
+                            document.addEventListener("keydown", handleUserGesture, { once: true });
                             onErrorRef.current(
-                                'Autoplay blocked. Please interact with the page to enable remote audio.'
+                                "Autoplay blocked. Please interact with the page to enable remote audio."
                             );
                         }
                     };
@@ -254,7 +254,7 @@ export function useWebSocketVoiceCall({
 
             peerConnection.onconnectionstatechange = () => {
                 console.log(`📡 Peer connection for ${targetUid} state changed: ${peerConnection.connectionState}`);
-                if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+                if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
                     console.warn(
                         `📡 Peer connection for ${targetUid} is ${peerConnection.connectionState}. Cleaning up.`
                     );
@@ -293,8 +293,8 @@ export function useWebSocketVoiceCall({
             console.log(`🔗 Initiating call to ${targetUid}`);
 
             if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-                console.warn('🔗 WebSocket not connected, cannot initiate call.');
-                onErrorRef.current('Not connected to voice chat server.');
+                console.warn("🔗 WebSocket not connected, cannot initiate call.");
+                onErrorRef.current("Not connected to voice chat server.");
                 return;
             }
 
@@ -306,12 +306,12 @@ export function useWebSocketVoiceCall({
 
             let peerConnection = peerConnectionsRef.current.get(targetUid);
             if (peerConnection) {
-                if (peerConnection.connectionState === 'connected') {
+                if (peerConnection.connectionState === "connected") {
                     console.log(`🔗 Connection to ${targetUid} already exists and is connected.`);
                     return;
                 }
                 // If existing connection is not stable or closed, recreate
-                if (peerConnection.signalingState !== 'stable' && peerConnection.signalingState !== 'closed') {
+                if (peerConnection.signalingState !== "stable" && peerConnection.signalingState !== "closed") {
                     console.warn(
                         `🔗 Peer connection for ${targetUid} in unstable state (${peerConnection.signalingState}), recreating.`
                     );
@@ -330,7 +330,7 @@ export function useWebSocketVoiceCall({
             // Ensure we have a local stream before trying to add tracks
             const currentLocalStream = localStream || (await getMediaStream());
             if (!currentLocalStream) {
-                onErrorRef.current('Could not get microphone access to initiate call.');
+                onErrorRef.current("Could not get microphone access to initiate call.");
                 return;
             }
 
@@ -371,7 +371,7 @@ export function useWebSocketVoiceCall({
                         console.log(`🔗 Added newly acquired local track (${track.kind}) to PC for ${targetUid}`);
                     });
                 } else {
-                    onErrorRef.current('Could not get microphone access to initiate call.');
+                    onErrorRef.current("Could not get microphone access to initiate call.");
                     return;
                 }
             }
@@ -385,7 +385,7 @@ export function useWebSocketVoiceCall({
 
                 wsRef.current.send(
                     JSON.stringify({
-                        type: 'offer',
+                        type: "offer",
                         roomId,
                         uid,
                         data: { targetUid, sdp: offer.sdp },
@@ -412,13 +412,13 @@ export function useWebSocketVoiceCall({
                     setIsConnecting(false);
                     connectionAttemptRef.current = false; // Reset guard on successful connection
                     retryAttemptsRef.current = 0; // Reset retry counter on successful connection
-                    updateStatus('connected');
-                    console.log('✅ Connected to WebSocket');
+                    updateStatus("connected");
+                    console.log("✅ Connected to WebSocket");
 
                     // Start heartbeat
                     heartbeatIntervalRef.current = window.setInterval(() => {
                         if (wsRef.current?.readyState === WebSocket.OPEN) {
-                            wsRef.current.send(JSON.stringify({ type: 'heartbeat', roomId, uid }));
+                            wsRef.current.send(JSON.stringify({ type: "heartbeat", roomId, uid }));
                         }
                     }, 30000); // Send heartbeat every 30 seconds
                 }
@@ -429,14 +429,14 @@ export function useWebSocketVoiceCall({
 
                 try {
                     const message: WebSocketMessage = JSON.parse(event.data);
-                    console.log('➡️ Received message:', message);
+                    console.log("➡️ Received message:", message);
 
                     switch (message.type) {
-                        case 'participant-update':
+                        case "participant-update":
                             if (message.data?.participants) {
                                 const updatedParticipants = message.data.participants.map((p) => ({
                                     uid: p.uid,
-                                    role: p.role as 'speaker' | 'listener',
+                                    role: p.role as "speaker" | "listener",
                                     isMuted: p.isMuted,
                                 }));
                                 setInternalParticipants(updatedParticipants);
@@ -445,7 +445,7 @@ export function useWebSocketVoiceCall({
                                 // Initiate calls to new participants (if we are speaker and they are not us)
                                 updatedParticipants.forEach((p) => {
                                     if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
-                                        if (role === 'speaker') {
+                                        if (role === "speaker") {
                                             // As speaker, we initiate offers
                                             console.log(`🔗 Initiating call to new participant: ${p.uid}`);
                                             initiateCall(p.uid);
@@ -455,7 +455,7 @@ export function useWebSocketVoiceCall({
                             }
                             break;
 
-                        case 'offer':
+                        case "offer":
                             if (message.data?.fromUid && message.data?.sdp) {
                                 const fromUid = message.data.fromUid;
                                 console.log(`📞 Received offer from ${fromUid}`);
@@ -464,7 +464,7 @@ export function useWebSocketVoiceCall({
                                     // If we are the one that should initiate (smaller UID), then this is a duplicate offer.
                                     // Or if our signaling state is already in have-local-offer, we're in conflict.
                                     const pc = peerConnectionsRef.current.get(fromUid);
-                                    if (pc && pc.signalingState === 'have-local-offer') {
+                                    if (pc && pc.signalingState === "have-local-offer") {
                                         console.warn(
                                             `📞 Glare prevention: Received offer from ${fromUid} but we already sent an offer. Ignoring.`
                                         );
@@ -474,7 +474,7 @@ export function useWebSocketVoiceCall({
 
                                 let peerConnection = peerConnectionsRef.current.get(fromUid);
 
-                                if (peerConnection && peerConnection.signalingState !== 'stable') {
+                                if (peerConnection && peerConnection.signalingState !== "stable") {
                                     // If existing connection is not stable, tear it down and recreate
                                     console.warn(
                                         `📞 Peer connection for ${fromUid} in unstable state (${peerConnection.signalingState}), recreating.`
@@ -493,7 +493,7 @@ export function useWebSocketVoiceCall({
                                 // Ensure we have a local stream before trying to add tracks
                                 const currentLocalStream = localStream || (await getMediaStream());
                                 if (!currentLocalStream) {
-                                    onErrorRef.current('Could not get microphone access to receive offer.');
+                                    onErrorRef.current("Could not get microphone access to receive offer.");
                                     return;
                                 }
 
@@ -515,7 +515,7 @@ export function useWebSocketVoiceCall({
                                 });
 
                                 await peerConnection.setRemoteDescription(
-                                    new RTCSessionDescription({ type: 'offer', sdp: message.data.sdp })
+                                    new RTCSessionDescription({ type: "offer", sdp: message.data.sdp })
                                 );
 
                                 const answer = await peerConnection.createAnswer();
@@ -523,7 +523,7 @@ export function useWebSocketVoiceCall({
 
                                 ws.send(
                                     JSON.stringify({
-                                        type: 'answer',
+                                        type: "answer",
                                         roomId,
                                         uid,
                                         data: { targetUid: fromUid, sdp: answer.sdp },
@@ -533,15 +533,15 @@ export function useWebSocketVoiceCall({
                             }
                             break;
 
-                        case 'answer':
+                        case "answer":
                             if (message.data?.fromUid && message.data?.sdp) {
                                 const fromUid = message.data.fromUid;
                                 console.log(`📞 Received answer from ${fromUid}`);
                                 const peerConnection = peerConnectionsRef.current.get(fromUid);
 
-                                if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+                                if (peerConnection && peerConnection.signalingState === "have-local-offer") {
                                     await peerConnection.setRemoteDescription(
-                                        new RTCSessionDescription({ type: 'answer', sdp: message.data.sdp })
+                                        new RTCSessionDescription({ type: "answer", sdp: message.data.sdp })
                                     );
                                     processQueuedIceCandidates(fromUid);
                                 } else {
@@ -552,7 +552,7 @@ export function useWebSocketVoiceCall({
                             }
                             break;
 
-                        case 'ice-candidate':
+                        case "ice-candidate":
                             if (message.data?.fromUid && message.data?.candidate) {
                                 const fromUid = message.data.fromUid;
                                 const peerConnection = peerConnectionsRef.current.get(fromUid);
@@ -577,8 +577,8 @@ export function useWebSocketVoiceCall({
                             }
                             break;
 
-                        case 'leave':
-                            if (typeof message.data?.uid === 'number') {
+                        case "leave":
+                            if (typeof message.data?.uid === "number") {
                                 const leftUid = message.data.uid;
                                 console.log(`👋 User ${leftUid} left.`);
                                 const pc = peerConnectionsRef.current.get(leftUid);
@@ -602,12 +602,12 @@ export function useWebSocketVoiceCall({
                             }
                             break;
 
-                        case 'mute':
-                        case 'unmute':
+                        case "mute":
+                        case "unmute":
                             if (message.data?.uid) {
                                 const targetUid = message.data.uid;
-                                const isMutedByPeer = message.type === 'mute';
-                                console.log(`🗣️ User ${targetUid} is now ${isMutedByPeer ? 'muted' : 'unmuted'}.`);
+                                const isMutedByPeer = message.type === "mute";
+                                console.log(`🗣️ User ${targetUid} is now ${isMutedByPeer ? "muted" : "unmuted"}.`);
                                 // Update participants via callback, letting component manage state
                                 const updatedParticipants = internalParticipants.map((p) =>
                                     p.uid === targetUid ? { ...p, isMuted: isMutedByPeer } : p
@@ -618,7 +618,7 @@ export function useWebSocketVoiceCall({
                             break;
                     }
                 } catch (error) {
-                    console.error('Error handling WebSocket message:', error);
+                    console.error("Error handling WebSocket message:", error);
                     onErrorRef.current(
                         `Failed to process message: ${error instanceof Error ? error.message : String(error)}`
                     );
@@ -635,8 +635,8 @@ export function useWebSocketVoiceCall({
                     setIsConnecting(false);
                     connectionAttemptRef.current = false; // Reset guard on connection close
                     wsRef.current = null;
-                    console.log('❌ WebSocket connection closed:', event.code, event.reason);
-                    updateStatus('disconnected');
+                    console.log("❌ WebSocket connection closed:", event.code, event.reason);
+                    updateStatus("disconnected");
 
                     // Attempt to reconnect if not a normal closure or explicit disconnect
                     if (event.code !== 1000 && event.code !== 1001 && retryAttemptsRef.current < maxRetries) {
@@ -646,31 +646,31 @@ export function useWebSocketVoiceCall({
                         setTimeout(() => {
                             // Note: Reconnection logic moved to useEffect to avoid circular dependency
                         }, retryDelayMs * retryAttemptsRef.current);
-                        onErrorRef.current(`WebSocket closed: ${event.reason || 'Unknown reason'}. Reconnecting...`);
+                        onErrorRef.current(`WebSocket closed: ${event.reason || "Unknown reason"}. Reconnecting...`);
                     } else if (event.code !== 1000 && event.code !== 1001) {
                         onErrorRef.current(
-                            `WebSocket connection permanently closed: ${event.reason || 'Unknown reason'}.`
+                            `WebSocket connection permanently closed: ${event.reason || "Unknown reason"}.`
                         );
                     }
                 }
             };
 
             ws.onerror = (error) => {
-                console.error('🔥 WebSocket error event:', error);
+                console.error("🔥 WebSocket error event:", error);
                 if (wsRef.current === ws) {
                     setIsConnecting(false);
                     setIsConnected(false);
                     connectionAttemptRef.current = false; // Reset guard on error
                     wsRef.current = null;
-                    updateStatus('error');
-                    onErrorRef.current('WebSocket connection error. Attempting to reconnect...');
+                    updateStatus("error");
+                    onErrorRef.current("WebSocket connection error. Attempting to reconnect...");
                     // Trigger reconnect on error as well
                     if (retryAttemptsRef.current < maxRetries) {
                         retryAttemptsRef.current++;
                         console.log(`Attempting to reconnect (attempt ${retryAttemptsRef.current}/${maxRetries})...`);
                         // Note: Reconnection logic moved to useEffect to avoid circular dependency
                     } else {
-                        onErrorRef.current('WebSocket connection failed permanently.');
+                        onErrorRef.current("WebSocket connection failed permanently.");
                     }
                 }
             };
@@ -694,7 +694,7 @@ export function useWebSocketVoiceCall({
     const connect = useCallback(async () => {
         // Prevent multiple simultaneous connection attempts
         if (connectionAttemptRef.current) {
-            console.log('Connection attempt already in progress, skipping...');
+            console.log("Connection attempt already in progress, skipping...");
             return;
         }
 
@@ -702,18 +702,18 @@ export function useWebSocketVoiceCall({
             wsRef.current &&
             (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)
         ) {
-            console.log('WebSocket already connected or connecting.');
+            console.log("WebSocket already connected or connecting.");
             return;
         }
 
         if (isConnecting) {
-            console.log('Already in the process of connecting.');
+            console.log("Already in the process of connecting.");
             return;
         }
 
         connectionAttemptRef.current = true; // Set guard
         setIsConnecting(true);
-        updateStatus('connecting');
+        updateStatus("connecting");
 
         // Close any stale connection before initiating a new one
         if (wsRef.current) {
@@ -726,23 +726,23 @@ export function useWebSocketVoiceCall({
             const stream = await getMediaStream();
             if (!stream) {
                 setIsConnecting(false);
-                updateStatus('error');
+                updateStatus("error");
                 connectionAttemptRef.current = false; // Reset guard
                 return; // getMediaStream will handle onError
             }
 
-            console.log('Attempting to connect WebSocket...');
-            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080'}/voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
+            console.log("Attempting to connect WebSocket...");
+            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws; // Store reference immediately
 
             // Set up listeners for the new WebSocket instance
             setupWebSocketListeners(ws);
         } catch (error) {
-            console.error('Error initiating WebSocket connection:', error);
+            console.error("Error initiating WebSocket connection:", error);
             setIsConnecting(false);
             setIsConnected(false);
-            updateStatus('error');
+            updateStatus("error");
             connectionAttemptRef.current = false; // Reset guard
             onErrorRef.current(
                 `Failed to initiate WebSocket connection: ${error instanceof Error ? error.message : String(error)}`
@@ -751,8 +751,8 @@ export function useWebSocketVoiceCall({
     }, [roomId, uid, role, isConnecting, getMediaStream, setupWebSocketListeners, updateStatus]);
 
     const disconnect = useCallback(() => {
-        console.log('🔌 Disconnecting voice call...');
-        updateStatus('disconnected');
+        console.log("🔌 Disconnecting voice call...");
+        updateStatus("disconnected");
         connectionAttemptRef.current = false; // Reset guard
 
         // Clear heartbeat
@@ -762,7 +762,7 @@ export function useWebSocketVoiceCall({
         }
 
         if (wsRef.current) {
-            wsRef.current.close(1000, 'User initiated disconnect'); // Use code 1000 for normal closure
+            wsRef.current.close(1000, "User initiated disconnect"); // Use code 1000 for normal closure
             wsRef.current = null;
         }
 
@@ -793,12 +793,12 @@ export function useWebSocketVoiceCall({
         remoteAudioElementsRef.current.clear();
 
         // Close audio context
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") {
             try {
                 audioContextRef.current.close();
-                console.log('🔌 Audio context closed.');
+                console.log("🔌 Audio context closed.");
             } catch (error) {
-                console.warn('Error closing audio context:', error);
+                console.warn("Error closing audio context:", error);
             }
             audioContextRef.current = null;
         }
@@ -815,17 +815,17 @@ export function useWebSocketVoiceCall({
     }, [localStream, updateStatus]);
 
     const toggleMute = useCallback(async () => {
-        console.log('🔊 Toggle mute called, current state:', isMuted);
+        console.log("🔊 Toggle mute called, current state:", isMuted);
 
         if (!localStream) {
-            console.warn('🔊 No local stream available to toggle mute.');
-            onErrorRef.current('Microphone stream not available. Please ensure microphone access.');
+            console.warn("🔊 No local stream available to toggle mute.");
+            onErrorRef.current("Microphone stream not available. Please ensure microphone access.");
             return;
         }
 
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            console.warn('🔊 WebSocket not connected, cannot toggle mute state on server.');
-            onErrorRef.current('Not connected to voice chat server.');
+            console.warn("🔊 WebSocket not connected, cannot toggle mute state on server.");
+            onErrorRef.current("Not connected to voice chat server.");
             return;
         }
 
@@ -842,7 +842,7 @@ export function useWebSocketVoiceCall({
                 const senders = pc.getSenders();
                 // Temukan sender yang terkait dengan track audio lokal kita
                 const audioSender = senders.find(
-                    (sender) => sender.track?.kind === 'audio' && sender.track === audioTrack
+                    (sender) => sender.track?.kind === "audio" && sender.track === audioTrack
                 );
                 if (audioSender && audioSender.track) {
                     audioSender.track.enabled = !newMutedState;
@@ -860,7 +860,7 @@ export function useWebSocketVoiceCall({
             // Inform peers via WebSocket
             wsRef.current.send(
                 JSON.stringify({
-                    type: newMutedState ? 'mute' : 'unmute',
+                    type: newMutedState ? "mute" : "unmute",
                     roomId,
                     uid,
                 })
@@ -868,18 +868,18 @@ export function useWebSocketVoiceCall({
 
             // Update backend (optional, if your backend tracks mute state)
             try {
-                await fetch('/api/rooms/participant', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
+                await fetch("/api/rooms/participant", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ roomId, uid, isMuted: newMutedState }),
                 });
                 console.log(`🔊 Backend mute state updated to: ${newMutedState}`);
             } catch (error) {
-                console.error('Failed to update mute state on backend:', error);
+                console.error("Failed to update mute state on backend:", error);
             }
         } else {
-            console.warn('🔊 No audio track found in local stream to toggle mute.');
-            onErrorRef.current('No audio track found for muting/unmuting.');
+            console.warn("🔊 No audio track found in local stream to toggle mute.");
+            onErrorRef.current("No audio track found for muting/unmuting.");
         }
     }, [isMuted, localStream, roomId, uid, internalParticipants]);
 

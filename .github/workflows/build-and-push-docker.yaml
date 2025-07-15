@@ -7,14 +7,24 @@ on:
             - Dockerfile
 
 jobs:
-    build-and-push:
+    runs-on:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
             - name: Build Image
-              run: docker build -t amongbagas/tellme-app:latest --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }}
-                  .
+              run: |
+                  docker build \
+                    -t amongbagas/tellme-app:latest \
+                    --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
+                    --build-arg NEXT_PUBLIC_WEBSOCKET_URL=${{ secrets.NEXT_PUBLIC_WEBSOCKET_URL }} \
+                    --build-arg BETTER_AUTH_URL=${{ secrets.BETTER_AUTH_URL }} \
+                    --build-arg GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
+                    --build-arg GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
+                    --build-arg RESEND_API_KEY=${{ secrets.RESEND_API_KEY }} \
+                    --build-arg EMAIL_SENDER_NAME=${{ secrets.EMAIL_SENDER_NAME }} \
+                    --build-arg EMAIL_SENDER_ADDRESS=${{ secrets.EMAIL_SENDER_ADDRESS }} \
+                    .
             - name: Log in to Docker Hub
               run: docker login -u amongbagas -p ${{ secrets.DOCKER_HUB_TOKEN }}
             - name: Push Image

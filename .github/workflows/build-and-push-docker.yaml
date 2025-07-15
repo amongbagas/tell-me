@@ -1,5 +1,10 @@
 name: Build and Push Docker Image to Docker Hub
-on: [workflow_dispatch]
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - Dockerfile
 
 jobs:
     runs-on:

@@ -732,7 +732,7 @@ export function useWebSocketVoiceCall({
             }
 
             console.log("Attempting to connect WebSocket...");
-            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
+            const wsUrl = `${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws-voice-call?roomId=${roomId}&uid=${uid}&role=${role}`;
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws; // Store reference immediately
 

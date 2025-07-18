@@ -166,3 +166,7 @@ websocket-*.log
 
 # Environment-specific
 .env.backup
+
+# Docker secrets
+secrets/
+*.secret

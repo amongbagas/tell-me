@@ -15,5 +15,5 @@ jobs:
                   docker build -t amongbagas/tell-me-app:prod .
             - name: Push Image to Docker Hub
               run: |
-                  docker login -u amongbagas -p ${{ secrets.DOCKER_PASSWORD }}
+                  docker login -u amongbagas -p ${{ secrets.DOCKER_HUB_TOKEN }}
                   docker push amongbagas/tell-me-app:prod

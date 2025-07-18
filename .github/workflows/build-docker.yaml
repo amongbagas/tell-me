@@ -1,0 +1,19 @@
+name: Build and Publish Docker Image
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build_publish_image:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: Build Docker image
+              run: |
+                  docker build -t amongbagas/tell-me-app:prod .
+            - name: Push Image to Docker Hub
+              run: |
+                  docker login -u amongbagas -p ${{ secrets.DOCKER_PASSWORD }}
+                  docker push amongbagas/tell-me-app:prod

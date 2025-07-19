@@ -1,5 +1,5 @@
 # Stage 1: Dependencies
-FROM --platform=$BUILDPLATFORM node:20-alpine AS deps
+FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -8,7 +8,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --only=production --frozen-lockfile && npm cache clean --force
 
 # Stage 2: Build the application
-FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --frozen-lockfile
@@ -34,7 +34,7 @@ ENV WEBSOCKET_PORT="8080"
 RUN npm run build
 
 # Stage 3: Production image
-FROM --platform=$BUILDPLATFORM node:20-alpine AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

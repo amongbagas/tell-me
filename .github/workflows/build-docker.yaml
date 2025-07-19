@@ -15,19 +15,27 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v4
             - name: Set up QEMU
-              uses: docker/setup-qemu-action@v2
+              uses: docker/setup-qemu-action@v3
               with:
                   platforms: all
             - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v2
+              uses: docker/setup-buildx-action@v3
               with:
                   install: true
             - name: Login to Docker Hub
-              run: |
-                  echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u amongbagas --password-stdin
-            - name: Build Docker image and Push
-              run: |
-                  docker buildx build --platform linux/amd64,linux/arm64 -t amongbagas/tellme-app:prod --push .
+              uses: "docker/login-action@v3"
+              with:
+                  username: "${{ secrets.DOCKER_HUB_USERNAME }}"
+                  password: "${{ secrets.DOCKER_HUB_TOKEN }}"
+            - name: "Build and push image tags"
+              uses: "docker/build-push-action@v6"
+              with:
+                  context: "."
+                  platforms: "linux/amd64,linux/arm64"
+                  sbom: true
+                  push: true
+                  tags: |
+                      "${{ secrets.DOCKER_HUB_USERNAME }}/${{ github.event.repository.name }}:latest"
             - name: Create GitHub Deployment
               uses: actions/github-script@v7
               with:

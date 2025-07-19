@@ -19,6 +19,9 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+ARG NEXT_PUBLIC_WEBSOCKET_URL_ARG
+ENV NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL_ARG}
+
 # Set dummy environment variables for build process
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV BETTER_AUTH_SECRET="dummy-secret-for-build"
@@ -28,7 +31,6 @@ ENV EMAIL_SENDER_NAME="Dummy"
 ENV EMAIL_SENDER_ADDRESS="noreply@dummy.com"
 ENV GOOGLE_CLIENT_ID="dummy-google-client-id"
 ENV GOOGLE_CLIENT_SECRET="dummy-google-client-secret"
-ENV NEXT_PUBLIC_WEBSOCKET_URL="ws://dummy:8080"
 ENV WEBSOCKET_PORT="8080"
 
 RUN npm run build

@@ -5,37 +5,47 @@ on:
         branches:
             - main
 
+env:
+    REGISTRY: ghcr.io
+    IMAGE_NAME: ${{ github.repository }}
+
 jobs:
     build_publish_image:
         runs-on: ubuntu-latest
         permissions:
             contents: read
             deployments: write
+            id-token: write
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
+            - name: Login to GitHub Container Registry
+              uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract metadata (tags, labels) for Docker
+              id: meta
+              uses: docker-metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
             - name: Set up QEMU
               uses: docker/setup-qemu-action@v3
+
+            - name: Build and push image tags
+              uses: docker/build-push-action@v6
               with:
-                  platforms: all
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-              with:
-                  install: true
-            - name: Login to Docker Hub
-              uses: "docker/login-action@v3"
-              with:
-                  username: "${{ secrets.DOCKER_HUB_USERNAME }}"
-                  password: "${{ secrets.DOCKER_HUB_TOKEN }}"
-            - name: "Build and push image tags"
-              uses: "docker/build-push-action@v6"
-              with:
-                  context: "."
-                  platforms: "linux/amd64,linux/arm64"
-                  sbom: true
+                  context: .
                   push: true
-                  tags: |
-                      "${{ secrets.DOCKER_HUB_USERNAME }}/${{ github.event.repository.name }}:latest"
+                  platforms: linux/amd64,linux/arm64
+                  provenance: false
+                  tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+                  labels: ${{ steps.meta.outputs.labels }}
+
             - name: Create GitHub Deployment
               uses: actions/github-script@v7
               with:
@@ -43,7 +53,7 @@ jobs:
                       const repo = context.repo;
                       const sha = context.sha;
                       const environment = 'production';
-                      const description = 'Docker Image Built and Published to Docker Hub';
+                      const description = 'Docker Image Built and Published to GHCR';
                       const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`;
 
                       console.log(`Creating deployment for ${repo.owner}/${repo.repo} ref: ${sha} in environment: ${environment}`);

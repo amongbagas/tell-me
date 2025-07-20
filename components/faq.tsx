@@ -9,7 +9,7 @@ const faq = [
     {
         icon: EyeOff,
         question: "Seberapa anonimkah platform ini?",
-        answer: "Sangat anonim. Kami tidak pernah meminta nama asli, email, atau data pribadi lainnya. Saat memulai sesi, kamu akan diberi nama samaran acak. Kami mendesain sistem ini agar kamu bisa merasa sebebas mungkin untuk menjadi jujur.",
+        answer: "Interaksi Anda di sini anonim. Untuk melindungi akun Anda, kami menggunakan email hanya untuk keperluan autentikasi dan keamanan. Email Anda tidak akan pernah kami tampilkan secara publik. Saat memulai sesi, Anda akan berinteraksi menggunakan nama samaran acak, bukan nama asli atau email Anda. Kami mendesain sistem ini agar Anda bisa merasa sebebas mungkin untuk menjadi jujur.",
     },
     {
         icon: Users,
@@ -35,28 +35,24 @@ const faq = [
 
 const FAQ = () => {
     return (
-        <div id="faq" className="min-h-screen flex items-center justify-center px-6 py-25 xs:py-20">
-            <div className="max-w-screen-lg">
-                <h2 className="text-3xl xs:text-4xl md:text-5xl !leading-[1.15] font-bold tracking-tight text-center">
-                    Frequently Asked Questions
-                </h2>
-                <p className="mt-3 xs:text-lg text-center text-muted-foreground">
-                    Jawaban atas pertanyaan umum seputar TellMe
-                </p>
+        <div id="faq" className="w-full py-25 xs:py-20 px-6">
+            <h2 className="text-3xl xs:text-4xl md:text-5xl !leading-[1.15] font-bold tracking-tight text-center">
+                Frequently Asked Questions
+            </h2>
+            <p className="mt-3 xs:text-lg text-center text-muted-foreground">
+                Jawaban atas pertanyaan umum seputar TellMe
+            </p>
 
-                <div className="mt-12 grid md:grid-cols-2 bg-background rounded-xl overflow-hidden outline-[1px] outline-border outline-offset-[-1px]">
-                    {faq.map(({ question, answer, icon: Icon }) => (
-                        <div key={question} className="border p-6 -mt-px -ml-px">
-                            <div className="h-8 w-8 xs:h-10 xs:w-10 flex items-center justify-center rounded-full bg-accent">
-                                <Icon className="h-4 w-4 xs:h-6 xs:w-6" />
-                            </div>
-                            <div className="mt-3 mb-2 flex items-start gap-2 text-lg xs:text-[1.35rem] font-semibold tracking-tight">
-                                <span>{question}</span>
-                            </div>
-                            <p className="text-sm xs:text-base">{answer}</p>
+            <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {faq.map(({ question, answer, icon: Icon }) => (
+                    <div key={question} className="flex flex-col bg-background border rounded-xl py-6 px-5">
+                        <div className="mb-3 h-10 w-10 flex items-center justify-center bg-muted rounded-full">
+                            <Icon className="h-6 w-6" />
                         </div>
-                    ))}
-                </div>
+                        <span className="text-lg font-semibold">{question}</span>
+                        <p className="mt-1 text-foreground/80 text-[15px]">{answer}</p>
+                    </div>
+                ))}
             </div>
         </div>
     );

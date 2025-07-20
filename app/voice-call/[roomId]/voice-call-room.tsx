@@ -1,30 +1,30 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import AlertTitle
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Mic, MicOff, PhoneOff, User, Loader2, Siren, WifiOff } from 'lucide-react'; // Added WifiOff icon
-import { SparklesText } from '@/components/magicui/sparkles-text';
-import { Particles } from '@/components/ui/particles';
-import { useWebSocketVoiceCall, Participant } from '@/hooks/use-websocket-voice-call';
+import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import AlertTitle
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Mic, MicOff, PhoneOff, User, Loader2, Siren, WifiOff } from "lucide-react"; // Added WifiOff icon
+import { SparklesText } from "@/components/magicui/sparkles-text";
+import { Particles } from "@/components/ui/particles";
+import { useWebSocketVoiceCall, Participant } from "@/hooks/use-websocket-voice-call";
 
 interface VoiceCallRoomProps {
     roomId: string;
 }
 
-type Role = 'listener' | 'speaker';
-type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+type Role = "listener" | "speaker";
+type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
 // Helper function for consistent UID generation
 const getOrCreateUid = (roomId: string): number => {
     // Check if we're in a browser environment
-    if (typeof window === 'undefined' || typeof sessionStorage === 'undefined') {
+    if (typeof window === "undefined" || typeof sessionStorage === "undefined") {
         // If on server or sessionStorage not available, return a random UID
         return Math.floor(Math.random() * 9999) + 1;
     }
@@ -42,10 +42,10 @@ const getOrCreateUid = (roomId: string): number => {
 export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const role = (searchParams.get('role') as Role) || 'listener'; // Default to listener if not specified
+    const role = (searchParams.get("role") as Role) || "listener"; // Default to listener if not specified
 
     const [participants, setParticipants] = useState<Participant[]>([]);
-    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
     const [localUid, setLocalUid] = useState<number | null>(null);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
@@ -55,7 +55,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
 
     // Initialize UID on client side only
     useEffect(() => {
-        if (typeof window !== 'undefined') {
+        if (typeof window !== "undefined") {
             const generatedUid = getOrCreateUid(roomId);
             setUid(generatedUid);
             setLocalUid(generatedUid);
@@ -70,8 +70,8 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     // Memoize error handler to prevent infinite re-renders
     const handleError = useCallback((err: string) => {
         setErrorMessage(err);
-        setConnectionStatus('error');
-        console.error('WebSocket Error:', err);
+        setConnectionStatus("error");
+        console.error("WebSocket Error:", err);
     }, []);
 
     // Memoize status change handler to prevent infinite re-renders
@@ -93,57 +93,57 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
         try {
             // This function is now mostly handled by the hook's internal `autoEnableAudio` logic.
             // Here, we just need to confirm user interaction to resolve `suspended` audio context.
-            if (typeof window !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window)) {
+            if (typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window)) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                if (audioContext.state === 'suspended') {
+                if (audioContext.state === "suspended") {
                     await audioContext.resume();
-                    console.log('🎵 AudioContext resumed by user interaction.');
+                    console.log("🎵 AudioContext resumed by user interaction.");
                 }
                 // Close it if it was just opened for a check
-                if (audioContext.state === 'running') {
+                if (audioContext.state === "running") {
                     audioContext.close();
                 }
             }
 
             // Also, explicitly try to play any existing remote audio elements
-            const remoteAudioElements = document.querySelectorAll('audio[data-uid]');
+            const remoteAudioElements = document.querySelectorAll("audio[data-uid]");
             for (const audio of Array.from(remoteAudioElements)) {
                 try {
                     // Only attempt to play if it's paused or not yet played
                     if ((audio as HTMLAudioElement).paused || (audio as HTMLAudioElement).ended) {
                         await (audio as HTMLAudioElement).play();
-                        console.log(`🎵 Forced play audio for UID: ${audio.getAttribute('data-uid')}`);
+                        console.log(`🎵 Forced play audio for UID: ${audio.getAttribute("data-uid")}`);
                     }
                 } catch (error) {
-                    console.warn(`Failed to force play audio for UID ${audio.getAttribute('data-uid')}:`, error);
+                    console.warn(`Failed to force play audio for UID ${audio.getAttribute("data-uid")}:`, error);
                     // This error is expected if autoplay is still restricted by the browser
                 }
             }
             setNeedsUserInteraction(false); // Hide the prompt
         } catch (error) {
-            console.error('Failed to enable audio via user interaction handler:', error);
+            console.error("Failed to enable audio via user interaction handler:", error);
         }
     }, []);
 
     // --- Effect for Connection Status and Backend Sync ---
     useEffect(() => {
-        if (connectionStatus === 'connected' && uid > 0) {
+        if (connectionStatus === "connected" && uid > 0) {
             // Only proceed if UID is initialized
             setErrorMessage(null); // Clear any previous errors
 
             // Check if user interaction is still needed for audio context (e.g., if hook couldn't resume it)
             const checkAudioContextState = async () => {
-                if (typeof window !== 'undefined' && ('AudioContext' in window || 'webkitAudioContext' in window)) {
+                if (typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window)) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-                    if (audioContext.state === 'suspended') {
+                    if (audioContext.state === "suspended") {
                         setNeedsUserInteraction(true);
                     } else {
                         setNeedsUserInteraction(false);
                     }
                     // Close the context if we just opened it for a check
-                    if (audioContext.state === 'running') {
+                    if (audioContext.state === "running") {
                         audioContext.close();
                     }
                 }
@@ -151,35 +151,35 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
             checkAudioContextState();
 
             // Notify backend about participant joining
-            fetch('/api/rooms/participant', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            fetch("/api/rooms/participant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ roomId, uid, role }),
-            }).catch((err) => console.error('Failed to add participant to backend:', err));
+            }).catch((err) => console.error("Failed to add participant to backend:", err));
 
             // Update room status if speaker
-            if (role === 'speaker') {
-                fetch('/api/rooms', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ roomId, status: 'active' }),
-                }).catch((err) => console.error('Failed to update room status on backend:', err));
+            if (role === "speaker") {
+                fetch("/api/rooms", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ roomId, status: "active" }),
+                }).catch((err) => console.error("Failed to update room status on backend:", err));
             }
             console.log(`✅ Room ${roomId} connected successfully for UID ${uid}, role ${role}.`);
-        } else if (connectionStatus === 'disconnected') {
+        } else if (connectionStatus === "disconnected") {
             // Optionally show a 'disconnected' message
             console.log(`🔌 Disconnected from room ${roomId}.`);
-        } else if (connectionStatus === 'error') {
+        } else if (connectionStatus === "error") {
             console.error(`🔥 Connection error in room ${roomId}.`);
         }
     }, [connectionStatus, roomId, uid, role]);
 
     // --- Effect for Initiating Calls to New Participants ---
     useEffect(() => {
-        if (connectionStatus === 'connected' && participants.length > 0 && uid > 0) {
+        if (connectionStatus === "connected" && participants.length > 0 && uid > 0) {
             // Only proceed if UID is initialized
-            console.log('👥 WebSocket Participants updated:', participants);
-            console.log('👤 Current user UID:', uid, 'Role:', role);
+            console.log("👥 WebSocket Participants updated:", participants);
+            console.log("👤 Current user UID:", uid, "Role:", role);
 
             participants.forEach((participant) => {
                 // Ensure we don't try to call ourselves
@@ -192,9 +192,9 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                     // Jika belum ada PeerConnection, atau PeerConnection yang ada tidak aktif/sudah mati
                     if (
                         !existingPc ||
-                        existingPc.connectionState === 'disconnected' ||
-                        existingPc.connectionState === 'failed' ||
-                        existingPc.signalingState === 'closed'
+                        existingPc.connectionState === "disconnected" ||
+                        existingPc.connectionState === "failed" ||
+                        existingPc.signalingState === "closed"
                     ) {
                         console.log(
                             `📞 Memulai panggilan ke peserta ${participant.uid} (peran: ${participant.role}) untuk komunikasi simultan.`
@@ -213,35 +213,35 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
     // --- Handle Retry Connection ---
     const handleRetry = useCallback(() => {
         setErrorMessage(null);
-        setConnectionStatus('connecting');
+        setConnectionStatus("connecting");
         connect(); // Re-initiate connection via the hook
     }, [connect]);
 
     // --- Handle Ending the Call ---
     const handleEndCall = useCallback(async () => {
-        console.log('Ending call...');
+        console.log("Ending call...");
         try {
             // Remove participant from backend
             await fetch(`/api/rooms/participant?roomId=${roomId}&uid=${uid}`, {
-                method: 'DELETE',
+                method: "DELETE",
                 keepalive: true,
             });
 
             // Update room status
-            if (role === 'speaker') {
-                await fetch('/api/rooms', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ roomId, status: 'waiting' }),
+            if (role === "speaker") {
+                await fetch("/api/rooms", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ roomId, status: "waiting" }),
                 });
-            } else if (role === 'listener') {
+            } else if (role === "listener") {
                 await fetch(`/api/rooms?roomId=${roomId}`, {
-                    method: 'DELETE',
+                    method: "DELETE",
                     keepalive: true,
                 });
             }
         } catch (error) {
-            console.error('Failed to clean up:', error);
+            console.error("Failed to clean up:", error);
         }
         disconnect(); // Disconnect WebSocket and WebRTC connections
 
@@ -252,36 +252,36 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
             if (navigator.sendBeacon) {
                 // Send beacon for participant cleanup
                 navigator.sendBeacon(deleteParticipantUrl);
-                console.log('🚀 Sent beacon for participant cleanup.');
+                console.log("🚀 Sent beacon for participant cleanup.");
             } else {
                 // Fallback for browsers not supporting sendBeacon (less reliable)
-                fetch(deleteParticipantUrl, { method: 'DELETE', keepalive: true }).catch(console.error);
-                console.log('⚠️ Using fetch with keepalive for participant cleanup.');
+                fetch(deleteParticipantUrl, { method: "DELETE", keepalive: true }).catch(console.error);
+                console.log("⚠️ Using fetch with keepalive for participant cleanup.");
             }
         }
 
         // Update room status or delete room only if current user is speaker
-        if (role === 'speaker') {
-            const updateRoomUrl = '/api/rooms';
-            const updateRoomBody = JSON.stringify({ roomId, status: 'waiting' });
+        if (role === "speaker") {
+            const updateRoomUrl = "/api/rooms";
+            const updateRoomBody = JSON.stringify({ roomId, status: "waiting" });
             if (navigator.sendBeacon) {
-                navigator.sendBeacon(updateRoomUrl, new Blob([updateRoomBody], { type: 'application/json' }));
-                console.log('🚀 Sent beacon for room status update (speaker).');
+                navigator.sendBeacon(updateRoomUrl, new Blob([updateRoomBody], { type: "application/json" }));
+                console.log("🚀 Sent beacon for room status update (speaker).");
             } else {
                 fetch(updateRoomUrl, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
                     body: updateRoomBody,
                     keepalive: true,
                 }).catch(console.error);
-                console.log('⚠️ Using fetch with keepalive for room status update (speaker).');
+                console.log("⚠️ Using fetch with keepalive for room status update (speaker).");
             }
         }
         // Listener leaving does not change room status, but backend should delete their participant entry.
         // If the room becomes empty, the backend should handle room deletion.
 
         // Redirect after cleanup
-        router.push('/dashboard');
+        router.push("/dashboard");
     }, [disconnect, localUid, roomId, role, router, uid]);
 
     // --- Cleanup on Component Unmount / Page Refresh ---
@@ -292,44 +292,44 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                 const deleteParticipantUrl = `/api/rooms/participant?roomId=${roomId}&uid=${localUid}`;
                 if (navigator.sendBeacon) {
                     navigator.sendBeacon(deleteParticipantUrl);
-                    console.log('🚀 Sent beacon on beforeunload for participant cleanup.');
+                    console.log("🚀 Sent beacon on beforeunload for participant cleanup.");
                 } else {
                     // Fallback, though less reliable for page unload
-                    fetch(deleteParticipantUrl, { method: 'DELETE', keepalive: true }).catch(console.error);
-                    console.log('⚠️ Using fetch with keepalive on beforeunload for participant cleanup.');
+                    fetch(deleteParticipantUrl, { method: "DELETE", keepalive: true }).catch(console.error);
+                    console.log("⚠️ Using fetch with keepalive on beforeunload for participant cleanup.");
                 }
             }
             // Add similar logic for speaker if needed to change room status to 'waiting'
-            if (role === 'speaker') {
-                const updateRoomUrl = '/api/rooms';
-                const updateRoomBody = JSON.stringify({ roomId, status: 'waiting' });
+            if (role === "speaker") {
+                const updateRoomUrl = "/api/rooms";
+                const updateRoomBody = JSON.stringify({ roomId, status: "waiting" });
                 if (navigator.sendBeacon) {
-                    navigator.sendBeacon(updateRoomUrl, new Blob([updateRoomBody], { type: 'application/json' }));
-                    console.log('🚀 Sent beacon on beforeunload for room status update (speaker).');
+                    navigator.sendBeacon(updateRoomUrl, new Blob([updateRoomBody], { type: "application/json" }));
+                    console.log("🚀 Sent beacon on beforeunload for room status update (speaker).");
                 } else {
                     fetch(updateRoomUrl, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
                         body: updateRoomBody,
                         keepalive: true,
                     }).catch(console.error);
-                    console.log('⚠️ Using fetch with keepalive on beforeunload for room status update (speaker).');
+                    console.log("⚠️ Using fetch with keepalive on beforeunload for room status update (speaker).");
                 }
             }
             // No need to prevent default or return a string for sendBeacon
         };
 
-        window.addEventListener('beforeunload', handleBeforeUnload);
+        window.addEventListener("beforeunload", handleBeforeUnload);
 
         return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener("beforeunload", handleBeforeUnload);
             // The disconnect from useWebSocketVoiceCall will handle the primary WebSocket/WebRTC cleanup.
             // Backend cleanup for participant/room status is handled by beforeunload or handleEndCall.
         };
     }, [roomId, localUid, role]);
 
-    const isWaitingForSpeaker = role === 'listener' && !participants.some((p) => p.role === 'speaker');
-    const displayIsConnected = connectionStatus === 'connected';
+    const isWaitingForSpeaker = role === "listener" && !participants.some((p) => p.role === "speaker");
+    const displayIsConnected = connectionStatus === "connected";
 
     // Show loading if UID is not yet initialized
     if (uid === 0) {
@@ -351,7 +351,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
         );
     }
 
-    if (connectionStatus === 'connecting') {
+    if (connectionStatus === "connecting") {
         return (
             <div className="flex items-center justify-center min-h-screen bg-background p-4">
                 <Card className="w-[300px]">
@@ -380,17 +380,17 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                                 <CardTitle className="text-2xl">
                                     <SparklesText>Tell Me</SparklesText>
                                 </CardTitle>
-                                <Badge variant={role === 'speaker' ? 'default' : 'secondary'}>{role}</Badge>
+                                <Badge variant={role === "speaker" ? "default" : "secondary"}>{role}</Badge>
                             </div>
                             <CardDescription>
                                 Untuk menjagamu, identitasmu akan kami samarkan sepenuhnya.
                                 <br />
                                 <span className="text-sm text-muted-foreground">ID Anda: {localUid}</span>
                             </CardDescription>
-                            {!displayIsConnected && connectionStatus !== 'error' && (
+                            {!displayIsConnected && connectionStatus !== "error" && (
                                 <Badge variant="destructive">Terputus</Badge>
                             )}
-                            {connectionStatus === 'error' && (
+                            {connectionStatus === "error" && (
                                 <Badge
                                     variant="destructive"
                                     className="flex items-center justify-center gap-1 mx-auto max-w-fit"
@@ -438,7 +438,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                             ) : (
                                 <ScrollArea className="h-[300px] pr-4">
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {participants.length === 0 && connectionStatus === 'connected' ? (
+                                        {participants.length === 0 && connectionStatus === "connected" ? (
                                             <div className="col-span-full text-center text-muted-foreground py-10">
                                                 Tidak ada peserta lain di ruangan ini.
                                             </div>
@@ -468,20 +468,20 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                                                         <div className="text-center">
                                                             <h3 className="font-medium mb-1">
                                                                 {participant.uid === localUid
-                                                                    ? 'Anda' /* Changed to &quot;Anda&quot; for consistency with Indonesian */
-                                                                    : `Pengguna ${participant.uid}`}{' '}
+                                                                    ? "Anda" /* Changed to &quot;Anda&quot; for consistency with Indonesian */
+                                                                    : `Pengguna ${participant.uid}`}{" "}
                                                                 {/* Changed to &quot;Pengguna&quot; */}
                                                             </h3>
                                                             <Badge
                                                                 variant={
-                                                                    participant.role === 'speaker'
-                                                                        ? 'default'
-                                                                        : 'secondary'
+                                                                    participant.role === "speaker"
+                                                                        ? "default"
+                                                                        : "secondary"
                                                                 }
                                                             >
-                                                                {participant.role === 'speaker'
-                                                                    ? 'Speaker'
-                                                                    : 'Listener'}{' '}
+                                                                {participant.role === "speaker"
+                                                                    ? "Speaker"
+                                                                    : "Listener"}{" "}
                                                                 {/* Translate roles */}
                                                             </Badge>
                                                         </div>
@@ -498,7 +498,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                                     <Tooltip>
                                         <TooltipTrigger asChild>
                                             <Button
-                                                variant={isMuted ? 'destructive' : 'outline'}
+                                                variant={isMuted ? "destructive" : "outline"}
                                                 size="lg"
                                                 onClick={toggleMute}
                                                 className="rounded-full w-16 h-16 p-0 flex items-center justify-center hover:scale-105 transition-transform"
@@ -508,7 +508,7 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                                             </Button>
                                         </TooltipTrigger>
                                         <TooltipContent>
-                                            <p>{isMuted ? 'Nyalakan Mikrofon' : 'Bisukan Mikrofon'}</p>{' '}
+                                            <p>{isMuted ? "Nyalakan Mikrofon" : "Bisukan Mikrofon"}</p>{" "}
                                             {/* Translate tooltips */}
                                         </TooltipContent>
                                     </Tooltip>
@@ -534,7 +534,17 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
                 </div>
             </div>
             <div className="absolute inset-0 z-0">
-                <Particles />
+                <Particles
+                    className="w-full h-full"
+                    quantity={100}
+                    staticity={50}
+                    ease={50}
+                    size={0.4}
+                    refresh={true}
+                    color="#ffffff"
+                    vx={0}
+                    vy={0}
+                />
             </div>
         </div>
     );

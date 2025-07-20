@@ -23,7 +23,17 @@ export default function Page() {
                 </div>
             </SidebarInset>
             <div className="absolute inset-0 z-0">
-                <Particles />
+                <Particles
+                    className="w-full h-full"
+                    quantity={100}
+                    staticity={50}
+                    ease={50}
+                    size={0.4}
+                    refresh={true}
+                    color="#ffffff"
+                    vx={0}
+                    vy={0}
+                />
             </div>
         </SidebarProvider>
     );

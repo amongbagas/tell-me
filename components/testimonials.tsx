@@ -64,9 +64,10 @@ const testimonials = [
 const Testimonials = () => (
     <section id="testimonials" className="w-full py-12 md:py-24 lg:py-32">
         <div className="container px-4 md:px-6">
-            <h2 className="mb-8 text-3xl font-bold tracking-tight text-center sm:text-4xl md:mb-12 lg:text-5xl">
-                Testimonials
-            </h2>
+            <h2 className="text-3xl font-bold tracking-tight text-center sm:text-4xl lg:text-5xl">Testimonials</h2>
+            <p className="mt-3 mb-8 xs:text-lg md:mb-12 text-center text-muted-foreground">
+                Cerita dari mereka yang telah menemukan kenyamanan dan dukungan di TellMe
+            </p>
             <div className="relative">
                 <div className="absolute left-0 inset-y-0 w-16 md:w-32 bg-gradient-to-r from-background to-transparent z-1" />
                 <div className="absolute right-0 inset-y-0 w-16 md:w-32 bg-gradient-to-l from-background to-transparent z-1" />

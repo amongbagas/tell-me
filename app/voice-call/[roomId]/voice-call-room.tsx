@@ -328,6 +328,23 @@ export default function VoiceCallRoom({ roomId }: VoiceCallRoomProps) {
         };
     }, [roomId, localUid, role]);
 
+    // Heartbeat: ping backend setiap 15 detik jika sudah terhubung
+    useEffect(() => {
+        if (connectionStatus !== "connected" || uid === 0) return;
+
+        const interval = setInterval(() => {
+            fetch("/api/rooms/participant/heartbeat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ roomId, uid }),
+            }).catch((err) => {
+                console.error("Heartbeat gagal:", err);
+            });
+        }, 10000); // 15 detik
+
+        return () => clearInterval(interval);
+    }, [connectionStatus, roomId, uid]);
+
     const isWaitingForSpeaker = role === "listener" && !participants.some((p) => p.role === "speaker");
     const displayIsConnected = connectionStatus === "connected";
 

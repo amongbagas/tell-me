@@ -78,6 +78,7 @@ export const participant = pgTable(
         role: participantRoleEnum("role").notNull(),
         isMuted: boolean("is_muted").notNull().default(true),
         createdAt: timestamp("created_at").notNull().defaultNow(),
+        lastActive: timestamp("last_active").defaultNow(),
     },
     (table) => ({
         uniqueRoomUid: unique("unique_room_uid").on(table.roomId, table.uid),

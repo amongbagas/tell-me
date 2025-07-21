@@ -186,7 +186,7 @@ export function useWebSocketVoiceCall({
                     const remoteAudio = document.createElement("audio");
                     remoteAudio.srcObject = event.streams[0];
                     remoteAudio.autoplay = true;
-                    remoteAudio.controls = false; // Usually hide controls for voice calls
+                    remoteAudio.controls = false;
                     remoteAudio.volume = 1.0;
                     remoteAudio.muted = false;
                     remoteAudio.setAttribute("playsinline", "true");
@@ -198,63 +198,115 @@ export function useWebSocketVoiceCall({
                     if (existingAudio) {
                         existingAudio.pause();
                         existingAudio.srcObject = null;
-                        existingAudio.remove(); // Use .remove() for direct DOM removal
+                        existingAudio.remove();
                     }
 
                     document.body.appendChild(remoteAudio);
                     remoteAudioElementsRef.current.set(targetUid, remoteAudio);
                     console.log(`🎵 [${targetUid}] Remote audio element created and added to DOM.`);
 
-                    // Web Audio API routing for better control
-                    if (audioContextRef.current) {
-                        try {
-                            const source = audioContextRef.current.createMediaStreamSource(event.streams[0]);
-                            const gainNode = audioContextRef.current.createGain();
-                            gainNode.gain.value = 1.0;
-                            source.connect(gainNode);
-                            gainNode.connect(audioContextRef.current.destination);
-                            console.log(`🎵 [${targetUid}] Web Audio API routing established.`);
-                        } catch (webAudioError) {
-                            console.error(`🎵 [${targetUid}] Web Audio API setup failed:`, webAudioError);
-                        }
-                    }
+                    // Initialize Audio Context if not already done
+                    initializeAudioContext();
 
-                    // Autoplay logic
+                    // Enhanced autoplay logic with better error handling
                     const playRemoteAudio = async () => {
                         try {
-                            initializeAudioContext();
+                            // Ensure audio context is resumed first
                             await resumeAudioContext();
+
+                            // Try to play the audio
                             await remoteAudio.play();
                             console.log(`🎵 [${targetUid}] Remote audio played successfully.`);
+
+                            // Set up Web Audio API routing only after successful playback
+                            if (audioContextRef.current && audioContextRef.current.state === "running") {
+                                try {
+                                    const source = audioContextRef.current.createMediaStreamSource(event.streams[0]);
+                                    const gainNode = audioContextRef.current.createGain();
+                                    gainNode.gain.value = 1.0;
+                                    source.connect(gainNode);
+                                    gainNode.connect(audioContextRef.current.destination);
+                                    console.log(`🎵 [${targetUid}] Web Audio API routing established.`);
+                                } catch (webAudioError) {
+                                    console.warn(
+                                        `🎵 [${targetUid}] Web Audio API setup failed, using HTML audio element:`,
+                                        webAudioError
+                                    );
+                                    // Continue with HTML audio element only
+                                }
+                            }
                         } catch (error) {
                             console.warn(`🎵 [${targetUid}] Autoplay prevented:`, error);
-                            // If autoplay fails, prompt for user interaction
-                            const handleUserGesture = async () => {
-                                document.removeEventListener("click", handleUserGesture);
-                                document.removeEventListener("keydown", handleUserGesture);
+
+                            // Create a more user-friendly autoplay handler
+                            const handleUserInteraction = async (e: Event) => {
+                                e.preventDefault();
+                                document.removeEventListener("click", handleUserInteraction, true);
+                                document.removeEventListener("touchstart", handleUserInteraction, true);
+                                document.removeEventListener("keydown", handleUserInteraction, true);
+
                                 try {
-                                    initializeAudioContext();
                                     await resumeAudioContext();
                                     await remoteAudio.play();
                                     console.log(`🎵 [${targetUid}] Remote audio played after user gesture.`);
+
+                                    // Set up Web Audio API after user interaction
+                                    if (audioContextRef.current && audioContextRef.current.state === "running") {
+                                        try {
+                                            const source = audioContextRef.current.createMediaStreamSource(
+                                                event.streams[0]
+                                            );
+                                            const gainNode = audioContextRef.current.createGain();
+                                            gainNode.gain.value = 1.0;
+                                            source.connect(gainNode);
+                                            gainNode.connect(audioContextRef.current.destination);
+                                            console.log(
+                                                `🎵 [${targetUid}] Web Audio API routing established after user gesture.`
+                                            );
+                                        } catch (webAudioError) {
+                                            console.warn(
+                                                `🎵 [${targetUid}] Web Audio API setup failed after gesture:`,
+                                                webAudioError
+                                            );
+                                        }
+                                    }
                                 } catch (err) {
                                     console.error(`🎵 [${targetUid}] Failed to play after gesture:`, err);
+                                    onErrorRef.current(
+                                        `Failed to enable audio for user ${targetUid}. Please check your browser settings.`
+                                    );
                                 }
                             };
-                            document.addEventListener("click", handleUserGesture, { once: true });
-                            document.addEventListener("keydown", handleUserGesture, { once: true });
+
+                            // Listen for user interactions to enable audio
+                            document.addEventListener("click", handleUserInteraction, { once: true, capture: true });
+                            document.addEventListener("touchstart", handleUserInteraction, {
+                                once: true,
+                                capture: true,
+                            });
+                            document.addEventListener("keydown", handleUserInteraction, { once: true, capture: true });
+
                             onErrorRef.current(
-                                "Autoplay blocked. Please interact with the page to enable remote audio."
+                                "Audio blocked by browser. Please click anywhere on the page to enable remote audio."
                             );
                         }
                     };
-                    playRemoteAudio();
+
+                    // Add a small delay to ensure the stream is ready
+                    setTimeout(() => {
+                        playRemoteAudio();
+                    }, 100);
                 }
             };
 
             peerConnection.onconnectionstatechange = () => {
                 console.log(`📡 Peer connection for ${targetUid} state changed: ${peerConnection.connectionState}`);
-                if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+                if (peerConnection.connectionState === "connected") {
+                    console.log(`✅ Peer connection to ${targetUid} established successfully`);
+                } else if (
+                    peerConnection.connectionState === "disconnected" ||
+                    peerConnection.connectionState === "failed"
+                ) {
                     console.warn(
                         `📡 Peer connection for ${targetUid} is ${peerConnection.connectionState}. Cleaning up.`
                     );
@@ -265,10 +317,24 @@ export function useWebSocketVoiceCall({
 
             peerConnection.oniceconnectionstatechange = () => {
                 console.log(`📡 ICE connection state for ${targetUid}: ${peerConnection.iceConnectionState}`);
+                if (
+                    peerConnection.iceConnectionState === "connected" ||
+                    peerConnection.iceConnectionState === "completed"
+                ) {
+                    console.log(`✅ ICE connection to ${targetUid} established`);
+                }
             };
 
             peerConnection.onsignalingstatechange = () => {
                 console.log(`📡 Signaling state for ${targetUid}: ${peerConnection.signalingState}`);
+            };
+
+            peerConnection.ondatachannel = (event) => {
+                console.log(`📊 Data channel received from ${targetUid}:`, event.channel.label);
+            };
+
+            peerConnection.onicegatheringstatechange = () => {
+                console.log(`🧊 ICE gathering state for ${targetUid}: ${peerConnection.iceGatheringState}`);
             };
 
             peerConnectionsRef.current.set(targetUid, peerConnection);
@@ -279,10 +345,12 @@ export function useWebSocketVoiceCall({
 
     // Glare prevention logic helper
     const shouldInitiateOffer = useCallback(
-        (fromUid: number) => {
+        (targetUid: number) => {
             // If both sides try to initiate, the one with the smaller UID wins and creates the offer.
             // The other side (larger UID) should respond with an answer.
-            return uid < fromUid;
+            const shouldInitiate = uid < targetUid;
+            console.log(`🎯 Glare prevention check: ${uid} vs ${targetUid} - Should initiate: ${shouldInitiate}`);
+            return shouldInitiate;
         },
         [uid]
     );
@@ -290,7 +358,7 @@ export function useWebSocketVoiceCall({
     // --- Helper function for call initiation ---
     const initiateCall = useCallback(
         async (targetUid: number) => {
-            console.log(`🔗 Initiating call to ${targetUid}`);
+            console.log(`🔗 Initiating call to ${targetUid} (my UID: ${uid}, my role: ${role})`);
 
             if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
                 console.warn("🔗 WebSocket not connected, cannot initiate call.");
@@ -299,7 +367,7 @@ export function useWebSocketVoiceCall({
             }
 
             // Glare prevention: Only initiate if our UID is smaller
-            if (uid >= targetUid) {
+            if (!shouldInitiateOffer(targetUid)) {
                 console.log(`🔗 Glare prevention: Not initiating call to ${targetUid} because ${uid} >= ${targetUid}`);
                 return;
             }
@@ -324,16 +392,19 @@ export function useWebSocketVoiceCall({
             }
 
             if (!peerConnection) {
+                console.log(`🔗 Creating new peer connection for ${targetUid}`);
                 peerConnection = createPeerConnection(targetUid);
             }
 
             // Ensure we have a local stream before trying to add tracks
+            // For voice calls, both speakers and listeners need audio stream
             const currentLocalStream = localStream || (await getMediaStream());
             if (!currentLocalStream) {
                 onErrorRef.current("Could not get microphone access to initiate call.");
                 return;
             }
 
+            console.log(`🔗 Adding local tracks to peer connection for ${targetUid}`);
             // Add local stream tracks to the new peer connection if not already added
             const existingSenders = peerConnection.getSenders();
             currentLocalStream.getTracks().forEach((track) => {
@@ -350,38 +421,14 @@ export function useWebSocketVoiceCall({
                 }
             });
 
-            // Add local stream tracks if not already added
-            if (localStream) {
-                const existingSenders = peerConnection.getSenders();
-                localStream.getTracks().forEach((track) => {
-                    if (!existingSenders.some((sender) => sender.track === track)) {
-                        track.enabled = !isMuted; // Apply current mute state
-                        peerConnection!.addTrack(track, localStream);
-                        console.log(`🔗 Added local track (${track.kind}) to PC for ${targetUid}`);
-                    }
-                });
-            } else {
-                console.warn(`🔗 No local stream available when initiating call to ${targetUid}.`);
-                // Consider requesting stream here if not available and role is speaker
-                const stream = await getMediaStream();
-                if (stream) {
-                    stream.getTracks().forEach((track) => {
-                        track.enabled = !isMuted;
-                        peerConnection!.addTrack(track, stream);
-                        console.log(`🔗 Added newly acquired local track (${track.kind}) to PC for ${targetUid}`);
-                    });
-                } else {
-                    onErrorRef.current("Could not get microphone access to initiate call.");
-                    return;
-                }
-            }
-
             try {
+                console.log(`🔗 Creating offer for ${targetUid}`);
                 const offer = await peerConnection.createOffer({
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: false,
                 });
                 await peerConnection.setLocalDescription(offer);
+                console.log(`🔗 Set local description (offer) for ${targetUid}`);
 
                 wsRef.current.send(
                     JSON.stringify({
@@ -399,7 +446,7 @@ export function useWebSocketVoiceCall({
                 );
             }
         },
-        [roomId, uid, localStream, createPeerConnection, isMuted, getMediaStream]
+        [roomId, uid, role, localStream, createPeerConnection, isMuted, getMediaStream, shouldInitiateOffer]
     );
 
     // --- Core WebSocket Logic ---
@@ -442,14 +489,30 @@ export function useWebSocketVoiceCall({
                                 setInternalParticipants(updatedParticipants);
                                 onParticipantsChangeRef.current(updatedParticipants);
 
-                                // Initiate calls to new participants (if we are speaker and they are not us)
+                                console.log(
+                                    `👥 Participant update - Total: ${updatedParticipants.length}, My role: ${role}, My UID: ${uid}`
+                                );
+
+                                // Initiate calls to new participants based on role and glare prevention
                                 updatedParticipants.forEach((p) => {
                                     if (p.uid !== uid && !peerConnectionsRef.current.has(p.uid)) {
-                                        if (role === "speaker") {
-                                            // As speaker, we initiate offers
-                                            console.log(`🔗 Initiating call to new participant: ${p.uid}`);
+                                        console.log(`🔍 Checking connection to ${p.uid} (role: ${p.role})`);
+
+                                        // For voice calls, we need bidirectional audio
+                                        // Use glare prevention logic regardless of role
+                                        if (shouldInitiateOffer(p.uid)) {
+                                            console.log(
+                                                `🔗 Initiating call to participant ${p.uid} (role: ${p.role}) - UID comparison: ${uid} < ${p.uid}`
+                                            );
                                             initiateCall(p.uid);
+                                        } else {
+                                            console.log(
+                                                `⏳ Waiting for offer from participant ${p.uid} (role: ${p.role}) - UID comparison: ${uid} >= ${p.uid}`
+                                            );
                                         }
+                                    } else if (p.uid !== uid && peerConnectionsRef.current.has(p.uid)) {
+                                        const pc = peerConnectionsRef.current.get(p.uid);
+                                        console.log(`🔍 Existing connection to ${p.uid}: ${pc?.connectionState}`);
                                     }
                                 });
                             }
@@ -458,11 +521,10 @@ export function useWebSocketVoiceCall({
                         case "offer":
                             if (message.data?.fromUid && message.data?.sdp) {
                                 const fromUid = message.data.fromUid;
-                                console.log(`📞 Received offer from ${fromUid}`);
+                                console.log(`📞 Received offer from ${fromUid} (my UID: ${uid}, my role: ${role})`);
 
-                                if (!shouldInitiateOffer(fromUid)) {
-                                    // If we are the one that should initiate (smaller UID), then this is a duplicate offer.
-                                    // Or if our signaling state is already in have-local-offer, we're in conflict.
+                                // Glare prevention check
+                                if (shouldInitiateOffer(fromUid)) {
                                     const pc = peerConnectionsRef.current.get(fromUid);
                                     if (pc && pc.signalingState === "have-local-offer") {
                                         console.warn(
@@ -475,7 +537,6 @@ export function useWebSocketVoiceCall({
                                 let peerConnection = peerConnectionsRef.current.get(fromUid);
 
                                 if (peerConnection && peerConnection.signalingState !== "stable") {
-                                    // If existing connection is not stable, tear it down and recreate
                                     console.warn(
                                         `📞 Peer connection for ${fromUid} in unstable state (${peerConnection.signalingState}), recreating.`
                                     );
@@ -487,16 +548,22 @@ export function useWebSocketVoiceCall({
                                 }
 
                                 if (!peerConnection) {
+                                    console.log(`📞 Creating new peer connection for offer from ${fromUid}`);
                                     peerConnection = createPeerConnection(fromUid);
                                 }
 
                                 // Ensure we have a local stream before trying to add tracks
+                                // Both speakers and listeners need to have media stream for bidirectional audio
                                 const currentLocalStream = localStream || (await getMediaStream());
                                 if (!currentLocalStream) {
+                                    console.error(
+                                        `📞 Could not get microphone access to receive offer from ${fromUid}`
+                                    );
                                     onErrorRef.current("Could not get microphone access to receive offer.");
                                     return;
                                 }
 
+                                console.log(`📞 Adding local tracks to peer connection for ${fromUid}`);
                                 // Add local stream tracks to the new peer connection if not already added
                                 const existingSenders = peerConnection.getSenders();
                                 currentLocalStream.getTracks().forEach((track) => {
@@ -517,9 +584,11 @@ export function useWebSocketVoiceCall({
                                 await peerConnection.setRemoteDescription(
                                     new RTCSessionDescription({ type: "offer", sdp: message.data.sdp })
                                 );
+                                console.log(`📞 Set remote description from ${fromUid}`);
 
                                 const answer = await peerConnection.createAnswer();
                                 await peerConnection.setLocalDescription(answer);
+                                console.log(`📞 Created and set local answer for ${fromUid}`);
 
                                 ws.send(
                                     JSON.stringify({
@@ -529,6 +598,7 @@ export function useWebSocketVoiceCall({
                                         data: { targetUid: fromUid, sdp: answer.sdp },
                                     })
                                 );
+                                console.log(`📞 Sent answer to ${fromUid}`);
                                 processQueuedIceCandidates(fromUid);
                             }
                             break;
@@ -543,10 +613,11 @@ export function useWebSocketVoiceCall({
                                     await peerConnection.setRemoteDescription(
                                         new RTCSessionDescription({ type: "answer", sdp: message.data.sdp })
                                     );
+                                    console.log(`📞 Set remote description (answer) from ${fromUid}`);
                                     processQueuedIceCandidates(fromUid);
                                 } else {
                                     console.warn(
-                                        `📞 Ignoring answer from ${fromUid}, unexpected signaling state: ${peerConnection?.signalingState}`
+                                        `📞 Ignoring answer from ${fromUid}, unexpected signaling state: ${peerConnection?.signalingState || "no peer connection"}`
                                     );
                                 }
                             }

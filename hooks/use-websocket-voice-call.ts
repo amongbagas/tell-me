@@ -48,6 +48,45 @@ export function useWebSocketVoiceCall({
     const peerConnectionsRef = useRef<Map<number, RTCPeerConnection>>(new Map());
     const remoteAudioElementsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
     const audioContextRef = useRef<AudioContext | null>(null);
+
+    // Helper function to get ICE servers configuration
+    const getIceServersConfiguration = useCallback(() => {
+        const stunServers = [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+            "stun:stun3.l.google.com:19302",
+            "stun:stun4.l.google.com:19302",
+            "stun:stun.stunprotocol.org:3478",
+            "stun:stun.cloudflare.com:3478",
+        ];
+
+        const iceServers: RTCIceServer[] = stunServers.map((url) => ({ urls: url }));
+
+        // Add TURN servers (configurable via environment variables)
+        const turnUrls = [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp",
+        ];
+
+        const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME || "openrelayproject";
+        const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL || "openrelayproject";
+
+        turnUrls.forEach((url) => {
+            iceServers.push({
+                urls: url,
+                username: turnUsername,
+                credential: turnCredential,
+            });
+        });
+
+        console.log(
+            `🔧 ICE servers configuration: ${iceServers.length} servers (${stunServers.length} STUN, ${turnUrls.length} TURN)`
+        );
+
+        return iceServers;
+    }, []);
     const pendingAnswersRef = useRef<Set<number>>(new Set());
     const pendingIceCandidatesRef = useRef<Map<number, RTCIceCandidate[]>>(new Map());
     const retryAttemptsRef = useRef(0);
@@ -140,6 +179,31 @@ export function useWebSocketVoiceCall({
         }
     }, [localStream, initializeAudioContext]);
 
+    // Helper function to create offer/answer with timeout
+    const createOfferWithTimeout = useCallback(
+        async (pc: RTCPeerConnection, options?: RTCOfferOptions, timeoutMs = 10000) => {
+            return Promise.race([
+                pc.createOffer(options),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Create offer timeout")), timeoutMs)
+                ),
+            ]);
+        },
+        []
+    );
+
+    const createAnswerWithTimeout = useCallback(
+        async (pc: RTCPeerConnection, options?: RTCAnswerOptions, timeoutMs = 10000) => {
+            return Promise.race([
+                pc.createAnswer(options),
+                new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Create answer timeout")), timeoutMs)
+                ),
+            ]);
+        },
+        []
+    );
+
     const processQueuedIceCandidates = useCallback(async (targetUid: number) => {
         const peerConnection = peerConnectionsRef.current.get(targetUid);
         const queuedCandidates = pendingIceCandidatesRef.current.get(targetUid);
@@ -164,20 +228,49 @@ export function useWebSocketVoiceCall({
     const createPeerConnection = useCallback(
         (targetUid: number) => {
             const configuration: RTCConfiguration = {
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }],
+                iceServers: getIceServersConfiguration(),
+                // ICE configuration for better NAT traversal
+                iceCandidatePoolSize: 10,
+                iceTransportPolicy: "all", // Use all ICE candidates including relay
+                bundlePolicy: "max-bundle",
+                rtcpMuxPolicy: "require",
             };
+
+            console.log(`🔧 Creating peer connection for ${targetUid} with enhanced ICE configuration`);
             const peerConnection = new RTCPeerConnection(configuration);
 
             peerConnection.onicecandidate = (event) => {
-                if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                    wsRef.current.send(
-                        JSON.stringify({
-                            type: "ice-candidate",
-                            roomId,
-                            uid,
-                            data: { targetUid, candidate: event.candidate },
-                        })
-                    );
+                if (event.candidate) {
+                    // Log ICE candidate details for debugging
+                    console.log(`🧊 Generated ICE candidate for ${targetUid}:`, {
+                        type: event.candidate.type,
+                        protocol: event.candidate.protocol,
+                        address: event.candidate.address,
+                        port: event.candidate.port,
+                        priority: event.candidate.priority,
+                        foundation: event.candidate.foundation,
+                        component: event.candidate.component,
+                        relatedAddress: event.candidate.relatedAddress,
+                        relatedPort: event.candidate.relatedPort,
+                    });
+
+                    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                        wsRef.current.send(
+                            JSON.stringify({
+                                type: "ice-candidate",
+                                roomId,
+                                uid,
+                                data: { targetUid, candidate: event.candidate },
+                            })
+                        );
+                        console.log(
+                            `🧊 Sent ICE candidate to ${targetUid}: ${event.candidate.type} via ${event.candidate.protocol}`
+                        );
+                    } else {
+                        console.warn(`🧊 Cannot send ICE candidate to ${targetUid}: WebSocket not ready`);
+                    }
+                } else {
+                    console.log(`🧊 ICE gathering completed for ${targetUid}`);
                 }
             };
 
@@ -300,28 +393,107 @@ export function useWebSocketVoiceCall({
             };
 
             peerConnection.onconnectionstatechange = () => {
-                console.log(`📡 Peer connection for ${targetUid} state changed: ${peerConnection.connectionState}`);
-                if (peerConnection.connectionState === "connected") {
-                    console.log(`✅ Peer connection to ${targetUid} established successfully`);
-                } else if (
-                    peerConnection.connectionState === "disconnected" ||
-                    peerConnection.connectionState === "failed"
-                ) {
-                    console.warn(
-                        `📡 Peer connection for ${targetUid} is ${peerConnection.connectionState}. Cleaning up.`
-                    );
-                    // Note: Manual retry logic removed to avoid circular dependencies
-                    // The component using this hook should handle reconnection attempts
+                const state = peerConnection.connectionState;
+                console.log(`📡 Peer connection for ${targetUid} state changed: ${state}`);
+
+                switch (state) {
+                    case "connected":
+                        console.log(`✅ Peer connection to ${targetUid} established successfully`);
+                        // Log the selected candidate pair for debugging
+                        peerConnection
+                            .getStats()
+                            .then((stats) => {
+                                stats.forEach((report) => {
+                                    if (report.type === "candidate-pair" && report.state === "succeeded") {
+                                        console.log(`🎯 Active candidate pair for ${targetUid}:`, {
+                                            localCandidateType: report.localCandidateType,
+                                            remoteCandidateType: report.remoteCandidateType,
+                                            priority: report.priority,
+                                            bytesSent: report.bytesSent,
+                                            bytesReceived: report.bytesReceived,
+                                        });
+                                    }
+                                });
+                            })
+                            .catch((err) => console.warn("Failed to get stats:", err));
+                        break;
+                    case "connecting":
+                        console.log(`🔄 Connecting to ${targetUid}...`);
+                        break;
+                    case "disconnected":
+                        console.warn(`❌ Peer connection to ${targetUid} disconnected`);
+                        break;
+                    case "failed":
+                        console.error(`💥 Peer connection to ${targetUid} failed`);
+                        // Log detailed failure info
+                        peerConnection
+                            .getStats()
+                            .then((stats) => {
+                                stats.forEach((report) => {
+                                    if (report.type === "candidate-pair") {
+                                        console.log(`🔍 Candidate pair attempt for ${targetUid}:`, {
+                                            state: report.state,
+                                            localCandidateType: report.localCandidateType,
+                                            remoteCandidateType: report.remoteCandidateType,
+                                            priority: report.priority,
+                                            nominated: report.nominated,
+                                        });
+                                    }
+                                });
+                            })
+                            .catch((err) => console.warn("Failed to get failure stats:", err));
+                        break;
+                    case "closed":
+                        console.log(`🔒 Peer connection to ${targetUid} closed`);
+                        break;
                 }
             };
 
             peerConnection.oniceconnectionstatechange = () => {
-                console.log(`📡 ICE connection state for ${targetUid}: ${peerConnection.iceConnectionState}`);
-                if (
-                    peerConnection.iceConnectionState === "connected" ||
-                    peerConnection.iceConnectionState === "completed"
-                ) {
-                    console.log(`✅ ICE connection to ${targetUid} established`);
+                const iceState = peerConnection.iceConnectionState;
+                console.log(`🧊 ICE connection state for ${targetUid}: ${iceState}`);
+
+                switch (iceState) {
+                    case "connected":
+                    case "completed":
+                        console.log(`✅ ICE connection to ${targetUid} established`);
+                        break;
+                    case "checking":
+                        console.log(`🔍 ICE checking connectivity to ${targetUid}...`);
+                        break;
+                    case "disconnected":
+                        console.warn(`❌ ICE connection to ${targetUid} disconnected`);
+                        break;
+                    case "failed":
+                        console.error(`💥 ICE connection to ${targetUid} failed - NAT traversal issue?`);
+                        // Try ICE restart for failed connections
+                        if (peerConnection.signalingState === "stable") {
+                            console.log(`🔄 Attempting ICE restart for ${targetUid}`);
+                            setTimeout(async () => {
+                                try {
+                                    const offer = await peerConnection.createOffer({ iceRestart: true });
+                                    await peerConnection.setLocalDescription(offer);
+
+                                    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                                        wsRef.current.send(
+                                            JSON.stringify({
+                                                type: "offer",
+                                                roomId,
+                                                uid,
+                                                data: { targetUid, sdp: offer.sdp },
+                                            })
+                                        );
+                                        console.log(`🔄 Sent ICE restart offer to ${targetUid}`);
+                                    }
+                                } catch (error) {
+                                    console.error(`🔄 ICE restart failed for ${targetUid}:`, error);
+                                }
+                            }, 2000); // Wait 2 seconds before retry
+                        }
+                        break;
+                    case "closed":
+                        console.log(`🔒 ICE connection to ${targetUid} closed`);
+                        break;
                 }
             };
 
@@ -334,13 +506,28 @@ export function useWebSocketVoiceCall({
             };
 
             peerConnection.onicegatheringstatechange = () => {
-                console.log(`🧊 ICE gathering state for ${targetUid}: ${peerConnection.iceGatheringState}`);
+                const gatheringState = peerConnection.iceGatheringState;
+                console.log(`🧊 ICE gathering state for ${targetUid}: ${gatheringState}`);
+
+                if (gatheringState === "gathering") {
+                    console.log(`🧊 Started gathering ICE candidates for ${targetUid}`);
+                    // Set a timeout for ICE gathering
+                    setTimeout(() => {
+                        if (peerConnection.iceGatheringState === "gathering") {
+                            console.warn(
+                                `⏰ ICE gathering timeout for ${targetUid}, proceeding with available candidates`
+                            );
+                        }
+                    }, 10000); // 10 second timeout
+                } else if (gatheringState === "complete") {
+                    console.log(`✅ ICE gathering completed for ${targetUid}`);
+                }
             };
 
             peerConnectionsRef.current.set(targetUid, peerConnection);
             return peerConnection;
         },
-        [roomId, uid, initializeAudioContext, resumeAudioContext]
+        [roomId, uid, initializeAudioContext, resumeAudioContext, getIceServersConfiguration]
     ); // Removed initiateCall to avoid circular dependency
 
     // Glare prevention logic helper
@@ -423,7 +610,7 @@ export function useWebSocketVoiceCall({
 
             try {
                 console.log(`🔗 Creating offer for ${targetUid}`);
-                const offer = await peerConnection.createOffer({
+                const offer = await createOfferWithTimeout(peerConnection, {
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: false,
                 });
@@ -441,12 +628,25 @@ export function useWebSocketVoiceCall({
                 console.log(`🔗 Sent offer to ${targetUid}.`);
             } catch (error) {
                 console.error(`🔗 Error creating/sending offer to ${targetUid}:`, error);
+                if (error instanceof Error && error.message.includes("timeout")) {
+                    console.error(`⏰ Offer creation timeout for ${targetUid} - possible network issues`);
+                }
                 onErrorRef.current(
                     `Failed to initiate call with ${targetUid}: ${error instanceof Error ? error.message : String(error)}`
                 );
             }
         },
-        [roomId, uid, role, localStream, createPeerConnection, isMuted, getMediaStream, shouldInitiateOffer]
+        [
+            roomId,
+            uid,
+            role,
+            localStream,
+            createPeerConnection,
+            isMuted,
+            getMediaStream,
+            shouldInitiateOffer,
+            createOfferWithTimeout,
+        ]
     );
 
     // --- Core WebSocket Logic ---
@@ -586,7 +786,8 @@ export function useWebSocketVoiceCall({
                                 );
                                 console.log(`📞 Set remote description from ${fromUid}`);
 
-                                const answer = await peerConnection.createAnswer();
+                                console.log(`📞 Creating answer for ${fromUid}`);
+                                const answer = await createAnswerWithTimeout(peerConnection);
                                 await peerConnection.setLocalDescription(answer);
                                 console.log(`📞 Created and set local answer for ${fromUid}`);
 
@@ -629,12 +830,36 @@ export function useWebSocketVoiceCall({
                                 const peerConnection = peerConnectionsRef.current.get(fromUid);
                                 const candidate = new RTCIceCandidate(message.data.candidate);
 
+                                // Log received ICE candidate details
+                                console.log(`🧊 Received ICE candidate from ${fromUid}:`, {
+                                    type: candidate.type,
+                                    protocol: candidate.protocol,
+                                    address: candidate.address,
+                                    port: candidate.port,
+                                    priority: candidate.priority,
+                                    foundation: candidate.foundation,
+                                    component: candidate.component,
+                                    relatedAddress: candidate.relatedAddress,
+                                    relatedPort: candidate.relatedPort,
+                                });
+
                                 if (peerConnection) {
                                     if (peerConnection.remoteDescription) {
                                         try {
                                             await peerConnection.addIceCandidate(candidate);
+                                            console.log(
+                                                `✅ Successfully added ICE candidate from ${fromUid}: ${candidate.type} via ${candidate.protocol}`
+                                            );
                                         } catch (e) {
-                                            console.error(`📞 Error adding ICE candidate:`, e, candidate);
+                                            console.error(`❌ Error adding ICE candidate from ${fromUid}:`, e);
+                                            console.error(`Failed candidate details:`, {
+                                                type: candidate.type,
+                                                protocol: candidate.protocol,
+                                                address: candidate.address,
+                                                port: candidate.port,
+                                                sdpMid: candidate.sdpMid,
+                                                sdpMLineIndex: candidate.sdpMLineIndex,
+                                            });
                                         }
                                     } else {
                                         // Queue if remote description is not set yet
@@ -642,8 +867,12 @@ export function useWebSocketVoiceCall({
                                             pendingIceCandidatesRef.current.set(fromUid, []);
                                         }
                                         pendingIceCandidatesRef.current.get(fromUid)!.push(candidate);
-                                        console.log(`📞 Queued ICE candidate from ${fromUid}`);
+                                        console.log(
+                                            `⏳ Queued ICE candidate from ${fromUid} (remote description not set yet)`
+                                        );
                                     }
+                                } else {
+                                    console.warn(`❌ No peer connection found for ICE candidate from ${fromUid}`);
                                 }
                             }
                             break;
@@ -759,6 +988,7 @@ export function useWebSocketVoiceCall({
             initiateCall,
             getMediaStream,
             internalParticipants,
+            createAnswerWithTimeout,
         ]
     );
 

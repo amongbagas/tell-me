@@ -64,14 +64,13 @@ export function useWebSocketVoiceCall({
         const iceServers: RTCIceServer[] = stunServers.map((url) => ({ urls: url }));
 
         // Add TURN servers (configurable via environment variables)
-        const turnUrls = [
-            "turn:openrelay.metered.ca:80",
-            "turn:openrelay.metered.ca:443",
-            "turn:openrelay.metered.ca:443?transport=tcp",
-        ];
+        const turnUrls = (process.env.NEXT_PUBLIC_TURN_URLS || "")
+            .split(",")
+            .map((url) => url.trim())
+            .filter(Boolean);
 
-        const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME || "openrelayproject";
-        const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL || "openrelayproject";
+        const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
+        const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
 
         turnUrls.forEach((url) => {
             iceServers.push({

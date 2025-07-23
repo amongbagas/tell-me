@@ -72,12 +72,22 @@ export function useWebSocketVoiceCall({
         const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
         const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
 
+        // Debug logging untuk memastikan konfigurasi
+        console.log("🔧 TURN Configuration Debug:", {
+            rawUrls: process.env.NEXT_PUBLIC_TURN_URLS,
+            parsedUrls: turnUrls,
+            username: turnUsername ? `***${turnUsername.slice(-4)}` : "undefined",
+            credential: turnCredential ? "***set***" : "undefined",
+            totalTurnServers: turnUrls.length,
+        });
+
         turnUrls.forEach((url) => {
-            iceServers.push({
+            const turnServer = {
                 urls: url,
                 username: turnUsername,
                 credential: turnCredential,
-            });
+            };
+            iceServers.push(turnServer);
         });
 
         console.log(
@@ -398,7 +408,6 @@ export function useWebSocketVoiceCall({
                 switch (state) {
                     case "connected":
                         console.log(`✅ Peer connection to ${targetUid} established successfully`);
-                        // Log the selected candidate pair for debugging
                         peerConnection
                             .getStats()
                             .then((stats) => {
@@ -410,6 +419,10 @@ export function useWebSocketVoiceCall({
                                             priority: report.priority,
                                             bytesSent: report.bytesSent,
                                             bytesReceived: report.bytesReceived,
+                                            usingTURN:
+                                                report.localCandidateType === "relay" ||
+                                                report.remoteCandidateType === "relay",
+                                            connectionType: `${report.localCandidateType} -> ${report.remoteCandidateType}`,
                                         });
                                     }
                                 });

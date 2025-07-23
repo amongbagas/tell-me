@@ -59,6 +59,9 @@ jobs:
                   labels: ${{ steps.meta.outputs.labels }}
                   build-args: |
                       NEXT_PUBLIC_WEBSOCKET_URL_ARG=${{ secrets.NEXT_PUBLIC_WEBSOCKET_URL }}
+                      NEXT_PUBLIC_TURN_URLS_ARG=${{ secrets.NEXT_PUBLIC_TURN_URLS }}
+                      NEXT_PUBLIC_TURN_USERNAME_ARG=${{ secrets.NEXT_PUBLIC_TURN_USERNAME }}
+                      NEXT_PUBLIC_TURN_CREDENTIAL_ARG=${{ secrets.NEXT_PUBLIC_TURN_CREDENTIAL }}
 
             - name: Create GitHub Deployment
               uses: actions/github-script@v7
